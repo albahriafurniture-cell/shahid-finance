@@ -27,11 +27,10 @@ jobs:
 
       - name: Restore release keystore
         env:
-          KEYSTORE_BASE64: ${{ secrets.SHAHID_FINANCE_KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.SHAHID_FINANCE_KEYSTORE_PASSWORD }}
         run: |
-          if [ -n "$KEYSTORE_BASE64" ]; then
-            echo "$KEYSTORE_BASE64" | base64 -d > android/app/shahid-finance-release.keystore
+          if [ -n "$KEYSTORE_PASSWORD" ]; then
+            openssl enc -d -aes-256-cbc -salt -pbkdf2 -in android/app/shahid-finance-release.keystore.enc -out android/app/shahid-finance-release.keystore -pass env:KEYSTORE_PASSWORD
             cat > key.properties <<EOF
           storePassword=$KEYSTORE_PASSWORD
           keyPassword=$KEYSTORE_PASSWORD
