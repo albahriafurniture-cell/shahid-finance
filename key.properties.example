@@ -1,0 +1,6 @@
+# Copy to key.properties (project root). CI generates the real file from the
+# SHAHID_FINANCE_KEYSTORE_PASSWORD secret — never commit the real one.
+storePassword=<keystore password>
+keyPassword=<keystore password>
+keyAlias=shahidfinance
+storeFile=shahid-finance-release.keystore
