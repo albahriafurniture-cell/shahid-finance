@@ -77,8 +77,7 @@ class _SignInScreenState extends State<SignInScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.canvas,
+    return GlassScaffold(
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -139,6 +138,17 @@ class _SignInScreenState extends State<SignInScreen> {
                       ),
                       const SizedBox(height: 16),
                     ],
+                    if (_error != null && !_createMode)
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: GhostButton(
+                          label: 'No account yet? Create one',
+                          onTap: () => setState(() {
+                            _createMode = true;
+                            _error = null;
+                          }),
+                        ),
+                      ),
                     if (!_configured)
                       Container(
                         padding: const EdgeInsets.all(12),
@@ -148,7 +158,9 @@ class _SignInScreenState extends State<SignInScreen> {
                               BorderRadius.circular(AppRadius.sm),
                         ),
                         child: Text(
-                          'Cloud backup is not configured on this build. You can still use Shahid Finance fully offline.',
+                          'Cloud backup is not ready'
+                          '${BackupService.initError == null ? '.' : ': ${BackupService.initError}'}'
+                          ' You can still use Shahid Finance fully offline.',
                           style: AppText.label.copyWith(
                               fontSize: 13, color: AppColors.warningText),
                         ),

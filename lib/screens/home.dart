@@ -9,6 +9,7 @@ import '../widgets/transfer_sheet.dart';
 import 'add_transaction.dart';
 import 'budgets.dart';
 import 'transactions.dart';
+import 'password_manager.dart';
 import 'wallets.dart';
 
 /// Home dashboard (master Screen 3).
@@ -104,7 +105,7 @@ class HomeScreen extends StatelessWidget {
               onTap: () => Navigator.of(context).push(MaterialPageRoute(
                   builder: (_) => const WalletsScreen())),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Row(
                     children: [
@@ -129,9 +130,11 @@ class HomeScreen extends StatelessWidget {
                   AmountText(
                     value: Store.totalBalance,
                     style: AppText.displayBalance
-                        .copyWith(color: Colors.white),
+                        .copyWith(color: Colors.white, fontSize: 44),
                     neutral: true,
                   ),
+                  const SizedBox(height: 8),
+                  _balancePill(income, expense, prevIncome, prevExpense),
                   const SizedBox(height: 4),
                   Text(
                     'Across ${wallets.length} wallet${wallets.length == 1 ? '' : 's'}',
@@ -183,6 +186,13 @@ class HomeScreen extends StatelessWidget {
                   icon: Icons.south_west,
                   label: 'Add Income',
                   onTap: () => _openAdd(context, income: true),
+                ),
+                _quickAction(
+                  context,
+                  icon: Icons.key_outlined,
+                  label: 'Passwords',
+                  onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const PasswordManagerScreen())),
                 ),
                 _quickAction(
                   context,
@@ -245,6 +255,28 @@ class HomeScreen extends StatelessWidget {
     ));
   }
 
+  Widget _balancePill(int income, int expense, int prevIncome, int prevExpense) {
+    final net = income - expense;
+    final prevNet = prevIncome - prevExpense;
+    String label;
+    if (prevNet == 0) {
+      label = net >= 0 ? 'Saving this month' : 'Spending this month';
+    } else {
+      final pct = ((net - prevNet) / prevNet.abs() * 100).round();
+      label = '${pct >= 0 ? '+' : '−'}${pct.abs()}% vs last month';
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.lime,
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+      ),
+      child: Text(label,
+          style: AppText.label
+              .copyWith(fontSize: 12, color: AppColors.canvas)),
+    );
+  }
+
   Widget _heroStat({
     required IconData icon,
     required String label,
@@ -298,18 +330,18 @@ class HomeScreen extends StatelessWidget {
       child: Column(
         children: [
           Container(
-            width: 56,
-            height: 56,
+            width: 52,
+            height: 52,
             decoration: BoxDecoration(
               color: AppColors.surface,
               shape: BoxShape.circle,
               border: Border.all(color: AppColors.hairline),
               boxShadow: AppShadows.card,
             ),
-            child: Icon(icon, size: 24, color: AppColors.brandDeep),
+            child: Icon(icon, size: 22, color: AppColors.lime),
           ),
           const SizedBox(height: 6),
-          Text(label, style: AppText.label.copyWith(fontSize: 12)),
+          Text(label, style: AppText.label.copyWith(fontSize: 11)),
         ],
       ),
     );

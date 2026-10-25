@@ -99,8 +99,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.canvas,
+    return GlassScaffold(
       body: SafeArea(
         child: Column(
           children: [
@@ -198,7 +197,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       itemBuilder: (ctx, i) {
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Column(
+          child: SingleChildScrollView(
+            child: Column(
             children: [
               const SizedBox(height: 24),
               _illustrationStage(i),
@@ -214,6 +214,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     textAlign: TextAlign.center),
               ),
             ],
+            ),
           ),
         );
       },
@@ -271,7 +272,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               width: 170,
               height: 110,
               decoration: BoxDecoration(
-                color: AppColors.brandDeep,
+                color: AppColors.deepPurple,
                 borderRadius: BorderRadius.circular(24),
               ),
               child: Align(
@@ -302,12 +303,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         Positioned(
           right: 52,
           bottom: 38,
-          child: coin('Rs', AppColors.mint, AppColors.ink, 44),
+          child: coin('Rs', AppColors.mint, AppColors.canvas, 44),
         ),
         Positioned(
           right: 30,
           bottom: 74,
-          child: coin('Rs', const Color(0xFFF5A623), AppColors.ink, 34),
+          child: coin('Rs', const Color(0xFFF5A623), AppColors.canvas, 34),
         ),
       ],
     );
@@ -323,8 +324,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           children: [
             for (final (h, c) in [
               (60.0, AppColors.mint),
-              (95.0, AppColors.brand),
-              (135.0, AppColors.brandDeep),
+              (95.0, AppColors.info),
+              (135.0, AppColors.warning),
             ]) ...[
               Container(
                 width: 40,

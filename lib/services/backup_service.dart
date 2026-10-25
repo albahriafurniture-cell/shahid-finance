@@ -27,6 +27,14 @@ class BackupService {
   static bool ready = false;
   static String? initError;
 
+  /// Web OAuth client (type 3) from google-services.json — passed as
+  /// serverClientId so Firebase reliably receives an idToken.
+  static const webClientId =
+      '132852240377-aqrgp73r00aim7dhsof779pnqobqs0me.apps.googleusercontent.com';
+
+  static GoogleSignIn _googleSignIn() =>
+      GoogleSignIn(serverClientId: webClientId);
+
   static Future<void> init() async {
     try {
       await Firebase.initializeApp();
@@ -54,6 +62,17 @@ class BackupService {
   }
 
   static String _friendly(Object e) {
+    final text = e.toString();
+    // Google Play services ApiException 10 = DEVELOPER_ERROR: the APK's
+    // signing SHA-1 is not registered for this OAuth client. Only a
+    // release-signed build (the 9B:5D:…:2E keystore) can Google-sign-in.
+    if (text.contains('ApiException: 10') ||
+        text.contains('statusCode: 10') ||
+        text.contains('DEVELOPER_ERROR')) {
+      return 'Google sign-in failed (error 10): this build is not signed '
+          'with the registered release key. Install the release-signed APK, '
+          'not a debug build.';
+    }
     if (e is FirebaseAuthException) {
       switch (e.code) {
         case 'invalid-email':
@@ -61,18 +80,28 @@ class BackupService {
         case 'user-not-found':
         case 'wrong-password':
         case 'invalid-credential':
-          return 'Email or password is incorrect.';
+          return 'Email or password is incorrect. If you never created an '
+              'account with this email, tap “Create account” below.';
         case 'email-already-in-use':
           return 'An account with this email already exists. Sign in instead.';
         case 'weak-password':
           return 'Password is too weak — use at least 6 characters.';
         case 'network-request-failed':
           return 'No internet connection. Try again when you are online.';
+        case 'operation-not-allowed':
+          return 'This sign-in method is not enabled for Shahid Finance '
+              '(code: operation-not-allowed).';
+        case 'too-many-requests':
+          return 'Too many attempts — wait a few minutes and try again.';
+        case 'user-disabled':
+          return 'This account has been disabled (code: user-disabled).';
         default:
-          return e.message ?? 'Sign-in failed. Please try again.';
+          final detail = e.message ?? 'Sign-in failed. Please try again.';
+          return '$detail (code: ${e.code})';
       }
     }
-    return 'Something went wrong. Please try again.';
+    // Never swallow the real error into a generic line again.
+    return 'Sign-in failed: $text';
   }
 
   static Future<void> signInWithEmail(String email, String password) async {
@@ -99,7 +128,7 @@ class BackupService {
   static Future<void> signInWithGoogle() async {
     _requireReady();
     try {
-      final googleUser = await GoogleSignIn().signIn();
+      final googleUser = await _googleSignIn().signIn();
       if (googleUser == null) {
         throw BackupException('Google sign-in was cancelled.');
       }
@@ -129,7 +158,7 @@ class BackupService {
   static Future<void> signOut() async {
     _requireReady();
     try {
-      await GoogleSignIn().signOut();
+      await _googleSignIn().signOut();
     } catch (_) {
       // Not signed in with Google — nothing to undo.
     }
@@ -150,7 +179,7 @@ class BackupService {
     await _backupDoc(user.uid).set({
       'data': snapshot,
       'updatedAt': FieldValue.serverTimestamp(),
-      'appVersion': '1.0.0',
+      'appVersion': '1.1.0',
     });
     final now = DateTime.now();
     await Store.settings.put('lastBackupAt', now.toIso8601String());

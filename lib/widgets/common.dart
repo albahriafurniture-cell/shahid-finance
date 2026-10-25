@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 
 import '../data/models.dart';
@@ -52,7 +54,7 @@ class CircleIconButton extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: AppColors.brand,
                     shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 1.5),
+                    border: Border.all(color: AppColors.canvas, width: 1.5),
                   ),
                 ),
               ),
@@ -87,19 +89,19 @@ class PrimaryButton extends StatelessWidget {
         height: height,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          gradient: enabled && gradient ? AppColors.heroGradient : null,
           color: enabled
-              ? (gradient ? null : AppColors.brand)
-              : AppColors.hairline,
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          boxShadow: enabled && gradient ? AppShadows.hero : null,
+              ? (gradient ? AppColors.lime : AppColors.offWhite)
+              : AppColors.surfaceInset,
+          borderRadius: BorderRadius.circular(AppRadius.pill),
+          border: Border.all(color: AppColors.hairline),
+          boxShadow: enabled ? AppShadows.hero : null,
         ),
         child: Text(
           label,
           style: AppText.body.copyWith(
             fontSize: 16,
             fontWeight: FontWeight.w700,
-            color: enabled ? Colors.white : AppColors.inkTertiary,
+            color: enabled ? AppColors.canvas : AppColors.inkTertiary,
           ),
         ),
       ),
@@ -115,7 +117,7 @@ class GhostButton extends StatelessWidget {
     super.key,
     required this.label,
     this.onTap,
-    this.color = AppColors.brandDeep,
+    this.color = AppColors.lime,
   });
 
   @override
@@ -210,13 +212,18 @@ class HeroCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: AppColors.heroGradient,
-          borderRadius: BorderRadius.circular(AppRadius.xl),
-          boxShadow: AppShadows.hero,
-        ),
-        child: ClipRRect(
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppRadius.xl),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: AppColors.heroGradient,
+              borderRadius: BorderRadius.circular(AppRadius.xl),
+              border: Border.all(color: AppColors.hairlineDark),
+              boxShadow: AppShadows.hero,
+            ),
+            child: ClipRRect(
           borderRadius: BorderRadius.circular(AppRadius.xl),
           child: Stack(
             children: [
@@ -261,6 +268,8 @@ class HeroCard extends StatelessWidget {
               ),
               Padding(padding: padding, child: child),
             ],
+          ),
+            ),
           ),
         ),
       ),
@@ -465,10 +474,16 @@ class GroupCard extends StatelessWidget {
         ));
       }
     }
-    return Container(
-      decoration: cardDecoration(),
-      padding: padding,
-      child: Column(children: separated),
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(AppRadius.lg),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+        child: Container(
+          decoration: cardDecoration(),
+          padding: padding,
+          child: Column(children: separated),
+        ),
+      ),
     );
   }
 }
@@ -541,10 +556,11 @@ Future<T?> showAppSheet<T>({
       return Padding(
         padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
         child: Container(
-          decoration: const BoxDecoration(
-            color: AppColors.surface,
-            borderRadius:
-                BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
+          decoration: BoxDecoration(
+            color: const Color(0xF21E1630),
+            borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(AppRadius.xl)),
+            border: Border.all(color: AppColors.hairline),
           ),
           child: SafeArea(
             top: false,
@@ -595,7 +611,7 @@ Future<bool> showConfirmDialog({
     context: context,
     barrierColor: AppColors.scrim,
     builder: (ctx) => AlertDialog(
-      backgroundColor: AppColors.surface,
+      backgroundColor: const Color(0xFF1E1630),
       shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppRadius.lg)),
       title: Text(title,
@@ -630,8 +646,8 @@ void appSnack(BuildContext context, String message, {VoidCallback? onUndo}) {
     SnackBar(
       content: Text(message,
           style: AppText.body.copyWith(
-              fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white)),
-      backgroundColor: AppColors.ink,
+              fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.offWhite)),
+      backgroundColor: const Color(0xFF1E1630),
       behavior: SnackBarBehavior.floating,
       margin: const EdgeInsets.all(16),
       shape: RoundedRectangleBorder(

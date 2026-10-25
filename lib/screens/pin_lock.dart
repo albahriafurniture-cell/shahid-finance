@@ -223,8 +223,7 @@ class _PinLockScreenState extends State<PinLockScreen>
   @override
   Widget build(BuildContext context) {
     final locked = _locked;
-    return Scaffold(
-      backgroundColor: AppColors.canvas,
+    return GlassScaffold(
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),

@@ -7,11 +7,13 @@ import 'package:share_plus/share_plus.dart';
 
 import '../data/store.dart';
 import '../services/backup_service.dart';
+import '../services/vault_service.dart';
 import '../services/pin_service.dart';
 import '../theme.dart';
 import '../utils/format.dart';
 import '../widgets/common.dart';
 import '../widgets/transfer_sheet.dart' show showWalletPicker;
+import 'password_manager.dart';
 import 'pin_lock.dart';
 import 'wallets.dart';
 
@@ -22,8 +24,7 @@ class SettingsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.canvas,
+    return GlassScaffold(
       body: SafeArea(
         child: ValueListenableBuilder<int>(
           valueListenable: Store.changes,
@@ -38,6 +39,21 @@ class SettingsScreen extends StatelessWidget {
                 _backupStrip(context),
                 const SizedBox(height: 24),
                 _cloudBackupGroup(context),
+                const SizedBox(height: 24),
+                _groupLabel('PASSWORD MANAGER'),
+                GroupCard(children: [
+                  _navRow(
+                    icon: Icons.key_outlined,
+                    label: 'Password Manager',
+                    value: VaultService.ready
+                        ? '${VaultService.entries.length}'
+                        : '—',
+                    onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                            builder: (_) =>
+                                const PasswordManagerScreen())),
+                  ),
+                ]),
                 const SizedBox(height: 24),
                 _groupLabel('WALLETS'),
                 GroupCard(children: [
@@ -179,7 +195,7 @@ class SettingsScreen extends StatelessWidget {
                   _staticRow(
                       icon: Icons.info_outline,
                       label: 'Version',
-                      value: '1.0'),
+                      value: '1.1'),
                   _navRow(
                     icon: Icons.privacy_tip_outlined,
                     label: 'Privacy policy',
@@ -217,7 +233,7 @@ class SettingsScreen extends StatelessWidget {
                 // Footer (exact, per task brief)
                 Column(
                   children: [
-                    Text('Shahid Finance · Version 1.0',
+                    Text('Shahid Finance · Version 1.1',
                         style: AppText.caption
                             .copyWith(color: AppColors.inkTertiary)),
                     const SizedBox(height: 4),
@@ -381,13 +397,24 @@ class SettingsScreen extends StatelessWidget {
       children: [
         _groupLabel('CLOUD BACKUP'),
         if (!BackupService.ready)
-          GroupCard(children: [
-            _staticRow(
-              icon: Icons.cloud_off_outlined,
-              label: 'Cloud backup is not configured in this build',
-              value: '',
+          Container(
+            decoration: cardDecoration(),
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                const Icon(Icons.cloud_off_outlined,
+                    color: AppColors.warning),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Cloud backup is not ready'
+                    '${BackupService.initError == null ? '' : ': ${BackupService.initError}'}',
+                    style: AppText.body.copyWith(fontSize: 13),
+                  ),
+                ),
+              ],
             ),
-          ])
+          )
         else if (!BackupService.isSignedIn)
           GroupCard(children: [
             _navRow(
@@ -486,7 +513,9 @@ class SettingsScreen extends StatelessWidget {
   }
 
   Widget _field(String label, TextEditingController ctrl, String hint,
-      {bool numeric = false, bool obscure = false}) {
+      {bool numeric = false,
+      bool obscure = false,
+      TextInputType? keyboard}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -496,7 +525,8 @@ class SettingsScreen extends StatelessWidget {
         TextField(
           controller: ctrl,
           obscureText: obscure,
-          keyboardType: numeric ? TextInputType.phone : TextInputType.text,
+          keyboardType:
+              keyboard ?? (numeric ? TextInputType.phone : TextInputType.text),
           decoration: InputDecoration(
             hintText: hint,
             filled: true,
@@ -516,7 +546,8 @@ class SettingsScreen extends StatelessWidget {
 
   Future<void> _showSignInSheet(BuildContext context) async {
     if (!BackupService.ready) {
-      appSnack(context, 'Cloud backup is not configured in this build');
+      appSnack(context,
+          'Cloud backup is not ready: ${BackupService.initError ?? 'not configured'}');
       return;
     }
     final emailCtrl = TextEditingController();
@@ -557,7 +588,8 @@ class SettingsScreen extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _field('Email', emailCtrl, 'you@example.com'),
+              _field('Email', emailCtrl, 'you@example.com',
+                  keyboard: TextInputType.emailAddress),
               const SizedBox(height: 16),
               _field('Password', passCtrl, 'Password', obscure: true),
               if (error != null) ...[
@@ -597,6 +629,52 @@ class SettingsScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 8),
+              Center(
+                child: TextButton(
+                  onPressed: busy
+                      ? null
+                      : () async {
+                          final email = emailCtrl.text.trim();
+                          if (email.isEmpty) {
+                            setSheet(() => error =
+                                'Enter your email first, then tap Forgot password.');
+                            return;
+                          }
+                          setSheet(() => busy = true);
+                          try {
+                            await BackupService.sendPasswordReset(email);
+                            if (ctx.mounted) {
+                              setSheet(() => busy = false);
+                            }
+                            if (context.mounted) {
+                              appSnack(context,
+                                  'Password reset email sent to $email');
+                            }
+                          } on BackupException catch (e) {
+                            if (ctx.mounted) {
+                              setSheet(() {
+                                busy = false;
+                                error = e.message;
+                              });
+                            }
+                          }
+                        },
+                  child: Text('Forgot password?',
+                      style: AppText.label.copyWith(color: AppColors.lime)),
+                ),
+              ),
+              if (error != null && !createAccount)
+                Center(
+                  child: TextButton(
+                    onPressed: () => setSheet(() {
+                      createAccount = true;
+                      error = null;
+                    }),
+                    child: Text('No account yet? Create an account instead',
+                        style:
+                            AppText.label.copyWith(color: AppColors.lime)),
+                  ),
+                ),
               Center(
                 child: TextButton(
                   onPressed: () =>

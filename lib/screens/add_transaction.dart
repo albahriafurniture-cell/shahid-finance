@@ -140,8 +140,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     final title = widget.isEdit
         ? 'Edit Transaction'
         : (_income ? 'Add Income' : 'Add Expense');
-    return Scaffold(
-      backgroundColor: AppColors.canvas,
+    return GlassScaffold(
       body: SafeArea(
         child: Column(
           children: [

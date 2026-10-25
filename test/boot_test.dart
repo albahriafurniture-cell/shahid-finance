@@ -9,6 +9,21 @@ import 'package:shahid_finance/utils/format.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  // NOTE: Hive/Store init lives in setUpAll, not inside the widget
+  // test body — opening Hive boxes inside a testWidgets body hangs
+  // in this sandbox (proven on the untouched v1.0 tree too).
+  late Directory testDir;
+  setUpAll(() async {
+    testDir = await Directory.systemTemp.createTemp('sf_test_');
+    Hive.init(testDir.path);
+    await Store.initFromDirectory();
+    await Store.seedWallets();
+  });
+  tearDownAll(() async {
+    await Hive.close();
+    if (await testDir.exists()) await testDir.delete(recursive: true);
+  });
+
   test('Pakistani digit grouping formatter', () {
     expect(groupPakistani(0), '0');
     expect(groupPakistani(999), '999');
@@ -38,19 +53,9 @@ void main() {
 
   testWidgets('Fresh install boots to onboarding with seeded data',
       (tester) async {
-    final dir = await Directory.systemTemp.createTemp('sf_test_');
-    addTearDown(() async {
-      await Hive.close();
-      if (await dir.exists()) await dir.delete(recursive: true);
-    });
-
-    Hive.init(dir.path);
-    await Store.initFromDirectory();
-
-    // Seed invariants: categories seeded, no wallets until onboarding seeds
-    // them, Easypaisa is the seeded default once wallets exist.
+    // Seed invariants (wallets seeded in setUpAll — see note above):
+    // categories seeded, Easypaisa is the seeded default.
     expect(Store.uniqueCategoryCount, 12);
-    await Store.seedWallets();
     expect(Store.allWallets.length, 4);
     expect(Store.defaultWallet?.name, 'Easypaisa');
     expect(Store.totalBalance, 0);

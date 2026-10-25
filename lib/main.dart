@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'data/store.dart';
 import 'services/backup_service.dart';
+import 'services/vault_service.dart';
 import 'theme.dart';
 import 'widgets/common.dart';
 import 'widgets/dock.dart';
@@ -37,6 +38,7 @@ Future<void> main() async {
   Object? bootError;
   try {
     await Store.init();
+    await VaultService.init();
     await BackupService.init();
   } catch (e) {
     bootError = e;
@@ -124,6 +126,7 @@ class _MainShellState extends State<MainShell> {
       backgroundColor: AppColors.canvas,
       body: Stack(
         children: [
+          const AuroraBackground(),
           IndexedStack(
             index: _tab,
             children: [

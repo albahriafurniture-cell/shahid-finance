@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 
 import '../theme.dart';
@@ -80,16 +82,20 @@ class _FloatingDockState extends State<FloatingDock> {
             ),
           ),
         ),
-        Container(
-          margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-          height: 68,
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(AppRadius.lg),
-            border: Border.all(color: AppColors.hairline),
-            boxShadow: AppShadows.raised,
-          ),
-          child: Row(
+        ClipRRect(
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+            child: Container(
+              margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              height: 68,
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(AppRadius.lg),
+                border: Border.all(color: AppColors.hairline),
+                boxShadow: AppShadows.raised,
+              ),
+              child: Row(
             children: [
               _tab(0, Icons.home_outlined, Icons.home, 'Home'),
               _tab(1, Icons.receipt_long_outlined, Icons.receipt_long,
@@ -97,7 +103,9 @@ class _FloatingDockState extends State<FloatingDock> {
               const SizedBox(width: 64), // FAB slot
               _tab(2, Icons.bar_chart_outlined, Icons.bar_chart, 'Reports'),
               _tab(3, Icons.person_outline, Icons.person, 'Profile'),
-            ],
+              ],
+              ),
+            ),
           ),
         ),
         Positioned(
@@ -108,14 +116,14 @@ class _FloatingDockState extends State<FloatingDock> {
               width: 56,
               height: 56,
               decoration: const BoxDecoration(
-                gradient: AppColors.heroGradient,
+                color: AppColors.lime,
                 shape: BoxShape.circle,
                 boxShadow: AppShadows.fab,
               ),
               child: AnimatedRotation(
                 turns: _fanOpen ? 0.125 : 0,
                 duration: const Duration(milliseconds: 200),
-                child: const Icon(Icons.add, color: Colors.white, size: 28),
+                child: const Icon(Icons.add, color: AppColors.canvas, size: 28),
               ),
             ),
           ),
@@ -179,14 +187,14 @@ class _FloatingDockState extends State<FloatingDock> {
               width: 44,
               height: 30,
               decoration: BoxDecoration(
-                color: selected ? AppColors.mintTint : Colors.transparent,
+                color: selected ? AppColors.lime : Colors.transparent,
                 borderRadius: BorderRadius.circular(AppRadius.pill),
               ),
               child: Icon(
                 selected ? iconFilled : icon,
                 size: 24,
                 color: selected
-                    ? AppColors.brandDeep
+                    ? AppColors.canvas
                     : AppColors.inkTertiary,
               ),
             ),
@@ -197,7 +205,7 @@ class _FloatingDockState extends State<FloatingDock> {
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
                 color: selected
-                    ? AppColors.brandDeep
+                    ? AppColors.lime
                     : AppColors.inkTertiary,
               ),
             ),
