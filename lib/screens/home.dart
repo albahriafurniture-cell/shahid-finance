@@ -6,6 +6,7 @@ import '../theme.dart';
 import '../utils/format.dart';
 import '../widgets/common.dart';
 import '../widgets/transfer_sheet.dart';
+import '../widgets/wallet_logo.dart';
 import 'add_transaction.dart';
 import 'budgets.dart';
 import 'transactions.dart';
@@ -165,36 +166,118 @@ class HomeScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 20),
-            // Quick actions
+            // v1.1.3: income & expense are the main focus — large,
+            // unmissable buttons above the fold, right under the hero.
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                _quickAction(
-                  context,
-                  icon: Icons.north_east,
-                  label: 'Add Expense',
-                  onTap: () => _openAdd(context, income: false),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => _openAdd(context, income: true),
+                    child: Container(
+                      height: 56,
+                      decoration: BoxDecoration(
+                        color: AppColors.accent,
+                        borderRadius:
+                            BorderRadius.circular(AppRadius.md),
+                        boxShadow: AppShadows.raised,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.south_west,
+                              size: 22, color: AppColors.canvas),
+                          const SizedBox(width: 8),
+                          Text('Add Income',
+                              style: AppText.bodyStrong.copyWith(
+                                  fontSize: 16, color: AppColors.canvas)),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
-                _quickAction(
-                  context,
-                  icon: Icons.south_west,
-                  label: 'Add Income',
-                  onTap: () => _openAdd(context, income: true),
-                ),
-                _quickAction(
-                  context,
-                  icon: Icons.track_changes,
-                  label: 'Budgets',
-                  onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                      builder: (_) => const BudgetsScreen())),
-                ),
-                _quickAction(
-                  context,
-                  icon: Icons.swap_horiz,
-                  label: 'Transfer',
-                  onTap: () => showTransferSheet(context),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => _openAdd(context, income: false),
+                    child: Container(
+                      height: 56,
+                      decoration: BoxDecoration(
+                        color: AppColors.surface,
+                        borderRadius:
+                            BorderRadius.circular(AppRadius.md),
+                        border: Border.all(
+                            color: AppColors.accent, width: 1.5),
+                        boxShadow: AppShadows.card,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.north_east,
+                              size: 22, color: AppColors.expense),
+                          const SizedBox(width: 8),
+                          Text('Add Expense',
+                              style: AppText.bodyStrong.copyWith(
+                                  fontSize: 16, color: AppColors.ink)),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
               ],
+            ),
+            const SizedBox(height: 20),
+            // v1.1.3 multi-scroll: wallet cards are a horizontally
+            // swipeable carousel (snap via PageView, next card peeks).
+            SectionHeader(
+              title: 'My Wallets',
+              actionLabel: 'Swipe ›',
+              onAction: () => Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => const WalletsScreen())),
+            ),
+            const SizedBox(height: 12),
+            _WalletCarousel(wallets: wallets),
+            const SizedBox(height: 20),
+            // v1.1.3 multi-scroll: quick actions scroll horizontally
+            // (row is wider than the screen, so the next action peeks).
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              child: Row(
+                children: [
+                  _quickAction(
+                    context,
+                    icon: Icons.north_east,
+                    label: 'Add Expense',
+                    onTap: () => _openAdd(context, income: false),
+                  ),
+                  _quickAction(
+                    context,
+                    icon: Icons.south_west,
+                    label: 'Add Income',
+                    onTap: () => _openAdd(context, income: true),
+                  ),
+                  _quickAction(
+                    context,
+                    icon: Icons.track_changes,
+                    label: 'Budgets',
+                    onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => const BudgetsScreen())),
+                  ),
+                  _quickAction(
+                    context,
+                    icon: Icons.swap_horiz,
+                    label: 'Transfer',
+                    onTap: () => showTransferSheet(context),
+                  ),
+                  _quickAction(
+                    context,
+                    icon: Icons.account_balance_wallet_outlined,
+                    label: 'Wallets',
+                    onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => const WalletsScreen())),
+                  ),
+                ],
+              ),
             ),
             // Budget snapshot strip
             if (alert != null) ...[
@@ -312,9 +395,11 @@ class HomeScreen extends StatelessWidget {
     required String label,
     required VoidCallback onTap,
   }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      child: GestureDetector(
+        onTap: onTap,
+        child: Column(
         children: [
           Container(
             width: 52,
@@ -330,6 +415,7 @@ class HomeScreen extends StatelessWidget {
           const SizedBox(height: 6),
           Text(label, style: AppText.label.copyWith(fontSize: 11)),
         ],
+        ),
       ),
     );
   }
@@ -392,6 +478,127 @@ class HomeScreen extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// v1.1.3: horizontally swipeable wallet carousel. PageView snaps
+/// page-to-page; viewportFraction < 1 leaves the next card peeking
+/// in, which is the affordance that more cards exist sideways.
+class _WalletCarousel extends StatefulWidget {
+  final List<Wallet> wallets;
+  const _WalletCarousel({required this.wallets});
+
+  @override
+  State<_WalletCarousel> createState() => _WalletCarouselState();
+}
+
+class _WalletCarouselState extends State<_WalletCarousel> {
+  final _controller = PageController(viewportFraction: 0.84);
+  int _page = 0;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.wallets.isEmpty) {
+      return Container(
+        decoration: cardDecoration(),
+        padding: const EdgeInsets.all(20),
+        child: Text('No wallets yet',
+            style: AppText.label.copyWith(color: AppColors.inkSecondary),
+            textAlign: TextAlign.center),
+      );
+    }
+    return Column(
+      children: [
+        SizedBox(
+          height: 132,
+          child: PageView.builder(
+            controller: _controller,
+            onPageChanged: (i) => setState(() => _page = i),
+            itemCount: widget.wallets.length,
+            itemBuilder: (context, i) {
+              final w = widget.wallets[i];
+              final balance = Store.balanceOf(w.id);
+              return Padding(
+                padding: const EdgeInsets.only(right: 12),
+                child: GestureDetector(
+                  onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => WalletDetailScreen(walletId: w.id))),
+                  child: Container(
+                    decoration: cardDecoration(),
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            WalletAvatar(type: w.type, size: 40),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(w.name,
+                                  style: AppText.bodyStrong,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis),
+                            ),
+                            if (w.isDefault)
+                              Text('Default',
+                                  style: AppText.caption.copyWith(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.brandDeep)),
+                          ],
+                        ),
+                        const Spacer(),
+                        Text('BALANCE',
+                            style: AppText.micro.copyWith(
+                                color: AppColors.inkTertiary)),
+                        const SizedBox(height: 2),
+                        AmountText(
+                          value: balance,
+                          style: AppText.amountRow,
+                          neutral: true,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(w.caption,
+                            style: AppText.caption.copyWith(
+                                color: AppColors.inkTertiary),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        if (widget.wallets.length > 1) ...[
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              for (var i = 0; i < widget.wallets.length; i++)
+                Container(
+                  width: _page == i ? 20 : 8,
+                  height: 8,
+                  margin: const EdgeInsets.symmetric(horizontal: 3),
+                  decoration: BoxDecoration(
+                    color: _page == i
+                        ? AppColors.accent
+                        : AppColors.hairline,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ],
     );
   }
 }

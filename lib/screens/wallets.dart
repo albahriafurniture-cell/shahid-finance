@@ -542,6 +542,63 @@ class WalletDetailScreen extends StatelessWidget {
                         neutral: true,
                       ),
                       const SizedBox(height: 12),
+                      // v1.1.3: opening balance is editable here and is
+                      // NOT income — it only adds to the balance (see
+                      // Store.balanceOf; sumIn/sumOut never see it).
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceInset,
+                          borderRadius:
+                              BorderRadius.circular(AppRadius.md),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.start,
+                                children: [
+                                  Text('OPENING BALANCE',
+                                      style: AppText.micro.copyWith(
+                                          color: AppColors.inkTertiary)),
+                                  const SizedBox(height: 2),
+                                  AmountText(
+                                    value: w.openingBalance,
+                                    style: AppText.bodyStrong,
+                                    neutral: true,
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'Your existing money — not counted as income',
+                                    style: AppText.caption.copyWith(
+                                        color: AppColors.inkTertiary),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            GestureDetector(
+                              onTap: () =>
+                                  _showOpeningBalanceSheet(context, w),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 14, vertical: 10),
+                                decoration: BoxDecoration(
+                                  color: AppColors.accent,
+                                  borderRadius: BorderRadius.circular(
+                                      AppRadius.pill),
+                                ),
+                                child: Text('Edit',
+                                    style: AppText.bodyStrong.copyWith(
+                                        fontSize: 14,
+                                        color: AppColors.canvas)),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
                       Row(
                         children: [
                           _stat('IN · ${fmtMonth(now).split(' ').first.toUpperCase()}',
@@ -691,6 +748,14 @@ class WalletDetailScreen extends StatelessWidget {
               _showAdjustSheet(context, w);
             },
           ),
+          ListTile(
+            leading: const Icon(Icons.account_balance_wallet_outlined),
+            title: Text('Edit opening balance', style: AppText.body),
+            onTap: () {
+              Navigator.of(context).pop();
+              _showOpeningBalanceSheet(context, w);
+            },
+          ),
           if (!w.isDefault)
             ListTile(
               leading: const Icon(Icons.check_circle_outline),
@@ -757,6 +822,47 @@ class WalletDetailScreen extends StatelessWidget {
               w.name = ctrl.text.trim();
               await Store.saveWallet(w);
               if (context.mounted) Navigator.of(context).pop();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// v1.1.3: edit the wallet's opening balance. This writes ONLY
+  /// Wallet.openingBalance (Hive + cloud snapshot via toJson) — it
+  /// creates NO transaction, so it can never appear in income totals,
+  /// expense totals, monthly in/out, or Reports figures.
+  Future<void> _showOpeningBalanceSheet(
+      BuildContext context, Wallet w) async {
+    final balanceCtrl =
+        TextEditingController(text: groupPakistani(w.openingBalance));
+    await showAppSheet<void>(
+      context: context,
+      title: 'Opening balance',
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Money you already had in ${w.name} before using the app. '
+            'It adds to this wallet\'s balance only — it is not income '
+            'and will not show in any income or expense total.',
+            style: AppText.caption.copyWith(color: AppColors.inkSecondary),
+          ),
+          const SizedBox(height: 16),
+          _sheetField('Opening balance', balanceCtrl, '0',
+              prefix: 'Rs ', numeric: true),
+          const SizedBox(height: 20),
+          PrimaryButton(
+            label: 'Save opening balance',
+            onTap: () async {
+              w.openingBalance = parseAmount(balanceCtrl.text);
+              await Store.saveWallet(w);
+              if (context.mounted) {
+                Navigator.of(context).pop();
+                appSnack(context, 'Opening balance updated');
+              }
             },
           ),
         ],

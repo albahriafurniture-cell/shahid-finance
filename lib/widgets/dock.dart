@@ -49,7 +49,8 @@ class _FloatingDockState extends State<FloatingDock> {
               child: Container(color: Colors.transparent),
             ),
           ),
-        // Fan mini-actions
+        // Fan mini-actions (v1.1.3: labelled header so the
+        // Income/Expense choice is unmistakable at a glance).
         Positioned(
           bottom: 92,
           child: AnimatedOpacity(
@@ -57,7 +58,25 @@ class _FloatingDockState extends State<FloatingDock> {
             duration: const Duration(milliseconds: 180),
             child: IgnorePointer(
               ignoring: !_fanOpen,
-              child: Row(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius:
+                          BorderRadius.circular(AppRadius.pill),
+                      border: Border.all(color: AppColors.hairline),
+                      boxShadow: AppShadows.card,
+                    ),
+                    child: Text('Income or expense?',
+                        style: AppText.label.copyWith(
+                            fontSize: 12, color: AppColors.ink)),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   _fanAction(
@@ -80,6 +99,8 @@ class _FloatingDockState extends State<FloatingDock> {
                       _closeFan();
                       widget.onAddExpense();
                     },
+                  ),
+                ],
                   ),
                 ],
               ),

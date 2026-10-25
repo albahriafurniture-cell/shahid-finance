@@ -1,9 +1,12 @@
 import 'dart:io';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
+import 'package:shahid_finance/data/models.dart';
 import 'package:shahid_finance/data/store.dart';
 import 'package:shahid_finance/main.dart';
+import 'package:shahid_finance/screens/home.dart';
 import 'package:shahid_finance/utils/format.dart';
 
 void main() {
@@ -67,5 +70,64 @@ void main() {
     // Onboarding slide 1 renders.
     expect(find.text('Know where your money goes'), findsOneWidget);
     expect(find.text('Next'), findsOneWidget);
+  });
+
+  test('v1.1.3: opening balance adds to balances, never to in/out totals',
+      () async {
+    // Runs after the boot test; restores the seeded state at the end.
+    final w = Store.defaultWallet!;
+    final now = DateTime.now();
+    final nowMs = now.millisecondsSinceEpoch;
+    w.openingBalance = 50000;
+    await Store.saveWallet(w);
+    await Store.saveTxn(MoneyTxn(
+      id: newId(),
+      type: 'income',
+      amount: 10000,
+      walletId: w.id,
+      dateMs: nowMs,
+      createdAtMs: nowMs,
+    ));
+    await Store.saveTxn(MoneyTxn(
+      id: newId(),
+      type: 'expense',
+      amount: 3000,
+      walletId: w.id,
+      dateMs: nowMs,
+      createdAtMs: nowMs,
+    ));
+    final monthTxns = Store.txnsInMonth(now.year, now.month);
+    expect(Store.balanceOf(w.id), 57000); // 50000 opening + 10000 − 3000
+    expect(Store.totalBalance, 57000);
+    expect(Store.sumIn(monthTxns), 10000); // opening balance NOT income
+    expect(Store.sumOut(monthTxns), 3000);
+    // Backup snapshot carries the opening balance (no fake txn needed).
+    final snapWallet = (Store.snapshot()['wallets'] as List)
+        .cast<Map<String, dynamic>>()
+        .firstWhere((j) => j['id'] == w.id);
+    expect(snapWallet['openingBalance'], 50000);
+    // Restore seeded state for later tests.
+    for (final t in Store.txns.values.toList()) {
+      await Store.deleteTxn(t.id);
+    }
+    w.openingBalance = 0;
+    await Store.saveWallet(w);
+    expect(Store.totalBalance, 0);
+  });
+
+  testWidgets('v1.1.3: Home elevates income/expense + wallet carousel',
+      (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: HomeScreen(onSeeAllTransactions: () {}),
+      ),
+    ));
+    await tester.pump(const Duration(milliseconds: 400));
+    // Large above-the-fold buttons (plus the horizontal quick row).
+    expect(find.text('Add Income'), findsWidgets);
+    expect(find.text('Add Expense'), findsWidgets);
+    expect(find.text('My Wallets'), findsOneWidget);
+    expect(find.text('Swipe ›'), findsOneWidget);
+    expect(find.text('Easypaisa'), findsWidgets);
   });
 }
