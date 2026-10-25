@@ -131,8 +131,10 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
 
         return Column(
           children: [
+            // Top clearance is status-bar height (MainShell SafeArea) + 12,
+            // so "Transactions" never collides with the status bar (v1.1.1).
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
               child: Row(
                 children: [
                   Expanded(child: Text('Transactions', style: AppText.h1)),
@@ -405,7 +407,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
           ? DismissDirection.horizontal
           : DismissDirection.endToStart,
       background: Container(
-        color: AppColors.mintTint,
+        color: AppColors.accentTint,
         alignment: Alignment.centerLeft,
         padding: const EdgeInsets.only(left: 20),
         child: const Row(

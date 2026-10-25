@@ -7,7 +7,9 @@ import '../theme.dart';
 /// Floating bottom navigation with the signature centre FAB fan
 /// (master §3.5): tap + → Add Income / Add Expense mini-actions.
 class FloatingDock extends StatefulWidget {
-  final int currentIndex; // 0 Home, 1 Transactions, 2 Reports, 3 Profile
+  // 0 Home, 1 History, 2 Vault, 3 Reports, 4 Profile (v1.1.1: Vault added
+  // as a visible dock tab; centre + FAB fan untouched).
+  final int currentIndex;
   final ValueChanged<int> onTab;
   final VoidCallback onAddIncome;
   final VoidCallback onAddExpense;
@@ -59,7 +61,7 @@ class _FloatingDockState extends State<FloatingDock> {
                   _fanAction(
                     icon: Icons.south_west,
                     label: 'Add Income',
-                    tint: AppColors.mintTint,
+                    tint: AppColors.accentTint,
                     color: AppColors.brandDeep,
                     onTap: () {
                       _closeFan();
@@ -100,9 +102,10 @@ class _FloatingDockState extends State<FloatingDock> {
               _tab(0, Icons.home_outlined, Icons.home, 'Home'),
               _tab(1, Icons.receipt_long_outlined, Icons.receipt_long,
                   'History'),
-              const SizedBox(width: 64), // FAB slot
-              _tab(2, Icons.bar_chart_outlined, Icons.bar_chart, 'Reports'),
-              _tab(3, Icons.person_outline, Icons.person, 'Profile'),
+              const SizedBox(width: 56), // FAB slot
+              _tab(2, Icons.lock_outlined, Icons.lock, 'Vault'),
+              _tab(3, Icons.bar_chart_outlined, Icons.bar_chart, 'Reports'),
+              _tab(4, Icons.person_outline, Icons.person, 'Profile'),
               ],
               ),
             ),
@@ -116,7 +119,7 @@ class _FloatingDockState extends State<FloatingDock> {
               width: 56,
               height: 56,
               decoration: const BoxDecoration(
-                color: AppColors.lime,
+                color: AppColors.accent,
                 shape: BoxShape.circle,
                 boxShadow: AppShadows.fab,
               ),
@@ -184,15 +187,17 @@ class _FloatingDockState extends State<FloatingDock> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              width: 44,
+              // Narrowed for 5 tabs + FAB slot so every label stays
+              // readable and tappable on a 360dp screen (v1.1.1).
+              width: 40,
               height: 30,
               decoration: BoxDecoration(
-                color: selected ? AppColors.lime : Colors.transparent,
+                color: selected ? AppColors.accent : Colors.transparent,
                 borderRadius: BorderRadius.circular(AppRadius.pill),
               ),
               child: Icon(
                 selected ? iconFilled : icon,
-                size: 24,
+                size: 22,
                 color: selected
                     ? AppColors.canvas
                     : AppColors.inkTertiary,
@@ -202,10 +207,10 @@ class _FloatingDockState extends State<FloatingDock> {
             Text(
               label,
               style: AppText.caption.copyWith(
-                fontSize: 11,
+                fontSize: 10,
                 fontWeight: FontWeight.w600,
                 color: selected
-                    ? AppColors.lime
+                    ? AppColors.accent
                     : AppColors.inkTertiary,
               ),
             ),

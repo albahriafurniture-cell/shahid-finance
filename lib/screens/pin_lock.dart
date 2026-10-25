@@ -262,7 +262,7 @@ class _PinLockScreenState extends State<PinLockScreen>
                   width: 64,
                   height: 64,
                   decoration: const BoxDecoration(
-                    color: AppColors.mintTint,
+                    color: AppColors.accentTint,
                     shape: BoxShape.circle,
                   ),
                   child: const Icon(Icons.lock,
@@ -273,7 +273,7 @@ class _PinLockScreenState extends State<PinLockScreen>
                   width: 64,
                   height: 64,
                   decoration: const BoxDecoration(
-                    color: AppColors.mintTint,
+                    color: AppColors.accentTint,
                     shape: BoxShape.circle,
                   ),
                   alignment: Alignment.center,

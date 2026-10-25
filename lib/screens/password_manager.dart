@@ -13,7 +13,10 @@ import 'settings.dart';
 /// If the app PIN is on, the vault sits behind the launch PIN gate;
 /// otherwise a warning recommends turning the PIN on.
 class PasswordManagerScreen extends StatefulWidget {
-  const PasswordManagerScreen({super.key});
+  /// When true the screen is a MainShell tab: the shell already supplies
+  /// the aurora backdrop + SafeArea(top), so no second scaffold/SafeArea.
+  final bool asTab;
+  const PasswordManagerScreen({super.key, this.asTab = false});
 
   @override
   State<PasswordManagerScreen> createState() => _PasswordManagerState();
@@ -32,22 +35,41 @@ class _PasswordManagerState extends State<PasswordManagerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return GlassScaffold(
-      body: SafeArea(
-        child: ValueListenableBuilder<int>(
+    // asTab: MainShell already supplies the aurora backdrop + SafeArea(top),
+    // so return the bare list (with dock clearance) instead of a second
+    // scaffold — otherwise the tab would double-inset under a second
+    // aurora layer.
+    final content = ValueListenableBuilder<int>(
           valueListenable: Store.changes,
           builder: (context, _, _) {
             final entries = VaultService.search(_query);
             return ListView(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+              padding: EdgeInsets.fromLTRB(20, 8, 20, widget.asTab ? 120 : 32),
               children: [
-                SubScreenHeader(
-                  title: 'Password Manager',
-                  trailing: CircleIconButton(
-                    icon: Icons.add,
-                    onTap: () => _editEntry(context, null),
+                // Tab header has no back button (there is nowhere to go
+                // back to from a dock tab); standalone keeps SubScreenHeader.
+                if (widget.asTab)
+                  Row(
+                    children: [
+                      const SizedBox(width: 44),
+                      Expanded(
+                        child: Text('Password Manager',
+                            style: AppText.h2, textAlign: TextAlign.center),
+                      ),
+                      CircleIconButton(
+                        icon: Icons.add,
+                        onTap: () => _editEntry(context, null),
+                      ),
+                    ],
+                  )
+                else
+                  SubScreenHeader(
+                    title: 'Password Manager',
+                    trailing: CircleIconButton(
+                      icon: Icons.add,
+                      onTap: () => _editEntry(context, null),
+                    ),
                   ),
-                ),
                 const SizedBox(height: 16),
                 if (!VaultService.ready)
                   Container(
@@ -93,7 +115,7 @@ class _PasswordManagerState extends State<PasswordManagerScreen> {
                       child: Row(
                         children: [
                           const Icon(Icons.lock_outline,
-                              color: AppColors.lime),
+                              color: AppColors.accent),
                           const SizedBox(width: 12),
                           Expanded(
                             child: Text(
@@ -111,7 +133,7 @@ class _PasswordManagerState extends State<PasswordManagerScreen> {
                     child: Row(
                       children: [
                         const Icon(Icons.shield_outlined,
-                            color: AppColors.lime),
+                            color: AppColors.accent),
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
@@ -165,8 +187,10 @@ class _PasswordManagerState extends State<PasswordManagerScreen> {
               ],
             );
           },
-        ),
-      ),
+        );
+    if (widget.asTab) return content;
+    return GlassScaffold(
+      body: SafeArea(child: content),
     );
   }
 
@@ -182,13 +206,13 @@ class _PasswordManagerState extends State<PasswordManagerScreen> {
               width: 44,
               height: 44,
               decoration: BoxDecoration(
-                color: AppColors.mintTint,
+                color: AppColors.accentTint,
                 borderRadius: BorderRadius.circular(AppRadius.sm),
               ),
               alignment: Alignment.center,
               child: Text(
                 e.title.isEmpty ? '?' : e.title[0].toUpperCase(),
-                style: AppText.bodyStrong.copyWith(color: AppColors.lime),
+                style: AppText.bodyStrong.copyWith(color: AppColors.accent),
               ),
             ),
             const SizedBox(width: 12),
@@ -206,7 +230,7 @@ class _PasswordManagerState extends State<PasswordManagerScreen> {
                       ),
                       if (e.favourite)
                         const Icon(Icons.star,
-                            size: 16, color: AppColors.lime),
+                            size: 16, color: AppColors.accent),
                     ],
                   ),
                   const SizedBox(height: 2),
@@ -371,7 +395,7 @@ class _PasswordManagerState extends State<PasswordManagerScreen> {
                       label: Text(c),
                       selected: category == c,
                       onSelected: (_) => setSheet(() => category = c),
-                      selectedColor: AppColors.lime,
+                      selectedColor: AppColors.accent,
                       labelStyle: AppText.label.copyWith(
                           color: category == c
                               ? AppColors.canvas
@@ -387,7 +411,7 @@ class _PasswordManagerState extends State<PasswordManagerScreen> {
               Row(
                 children: [
                   const Icon(Icons.star_outline,
-                      size: 20, color: AppColors.lime),
+                      size: 20, color: AppColors.accent),
                   const SizedBox(width: 8),
                   Expanded(
                       child: Text('Favourite', style: AppText.body)),

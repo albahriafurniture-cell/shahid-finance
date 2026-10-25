@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 
-/// Design tokens — v1.1 "Liquid Glass" (Dribbble crypto-wallet language,
+/// Design tokens — v1.1.1 "Liquid Glass" (Dribbble crypto-wallet language,
 /// Shahid Finance content only: PKR, no crypto assets, no copied copy).
 /// Base: near-black purple #0F0B16, deep purple #30244B, muted
 /// grey-purple #575361, light grey #A4A2AD, off-white #F2F2F4.
-/// Accent: lime/chartreuse #C6D549 for active states and key highlights.
+/// Accent (v1.1.1, per user order): neon blue #00D4FF for active states
+/// and key highlights — replaces the v1.1.0 lime #C6D549 everywhere in
+/// the UI. The user's yellow SF launcher/in-app icon image is NOT
+/// recoloured; only this UI accent changed. Dark text (canvas) sits on
+/// filled accent so contrast stays readable on the dark background.
 /// Dark burgundy #552329 + warm orange/pink/violet glows bleed in from
 /// the edges behind the glass. Buttons are pill-shaped: white primary,
-/// lime active accent, dark glass circles for secondary actions.
+/// neon-blue active accent, dark glass circles for secondary actions.
 class AppColors {
   static const canvas = Color(0xFF0F0B16);
   static const deepPurple = Color(0xFF30244B);
@@ -15,7 +19,12 @@ class AppColors {
   static const mutedPurple = Color(0xFF575361);
   static const lightGrey = Color(0xFFA4A2AD);
   static const offWhite = Color(0xFFF2F2F4);
-  static const lime = Color(0xFFC6D549);
+  static const accent = Color(0xFF00D4FF);
+  static const accentTint = Color(0x2600D4FF); // neon blue ~15%
+  // Back-compat aliases (v1.1.0 token names, now neon blue).
+  static const lime = accent;
+  static const mint = accent;
+  static const mintTint = accentTint;
 
   // Legacy token names, remapped onto the dark palette so every existing
   // screen adopts the theme without a feature change.
@@ -23,11 +32,9 @@ class AppColors {
   static const surfaceInset = Color(0x14FFFFFF); // white ~8% (dark rows)
   static const hairline = Color(0x2EFFFFFF); // white ~18%
   static const hairlineDark = Color(0x40FFFFFF); // white ~25%
-  static const brand = lime;
-  static const brandDeep = lime;
+  static const brand = accent;
+  static const brandDeep = accent;
   static const brandDark = canvas;
-  static const mint = lime;
-  static const mintTint = Color(0x26C6D549); // lime ~15%
   static const ink = offWhite;
   static const inkSecondary = lightGrey;
   static const inkTertiary = Color(0xFF8B8796);
@@ -143,7 +150,7 @@ ThemeData buildAppTheme() {
     brightness: Brightness.dark,
     scaffoldBackgroundColor: AppColors.canvas,
     colorScheme: const ColorScheme.dark(
-      primary: AppColors.lime,
+      primary: AppColors.accent,
       surface: AppColors.deepPurple,
       onSurface: AppColors.offWhite,
     ),
@@ -159,7 +166,7 @@ ThemeData buildAppTheme() {
               : AppColors.offWhite),
       trackColor: WidgetStateProperty.resolveWith((s) =>
           s.contains(WidgetState.selected)
-              ? AppColors.lime
+              ? AppColors.accent
               : AppColors.switchOff),
       trackOutlineColor: const WidgetStatePropertyAll(Colors.transparent),
     ),

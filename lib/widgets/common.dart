@@ -90,7 +90,7 @@ class PrimaryButton extends StatelessWidget {
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: enabled
-              ? (gradient ? AppColors.lime : AppColors.offWhite)
+              ? (gradient ? AppColors.accent : AppColors.offWhite)
               : AppColors.surfaceInset,
           borderRadius: BorderRadius.circular(AppRadius.pill),
           border: Border.all(color: AppColors.hairline),
@@ -117,7 +117,7 @@ class GhostButton extends StatelessWidget {
     super.key,
     required this.label,
     this.onTap,
-    this.color = AppColors.lime,
+    this.color = AppColors.accent,
   });
 
   @override
@@ -260,8 +260,8 @@ class HeroCard extends StatelessWidget {
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     gradient: RadialGradient(colors: [
-                      AppColors.mint.withValues(alpha: 0.35),
-                      AppColors.mint.withValues(alpha: 0),
+                      AppColors.accent.withValues(alpha: 0.35),
+                      AppColors.accent.withValues(alpha: 0),
                     ]),
                   ),
                 ),
@@ -324,7 +324,7 @@ class TxnRow extends StatelessWidget {
           width: 44,
           height: 44,
           decoration: BoxDecoration(
-            color: AppColors.mintTint,
+            color: AppColors.accentTint,
             borderRadius: BorderRadius.circular(AppRadius.sm),
           ),
           child: const Icon(Icons.swap_horiz,
@@ -514,7 +514,7 @@ class EmptyState extends StatelessWidget {
             width: 110,
             height: 110,
             decoration: const BoxDecoration(
-              color: AppColors.mintTint,
+              color: AppColors.accentTint,
               borderRadius: BorderRadius.only(
                 topLeft: Radius.circular(36),
                 topRight: Radius.circular(28),
@@ -654,7 +654,7 @@ void appSnack(BuildContext context, String message, {VoidCallback? onUndo}) {
           borderRadius: BorderRadius.circular(AppRadius.sm)),
       action: onUndo != null
           ? SnackBarAction(
-              label: 'Undo', textColor: AppColors.mint, onPressed: onUndo)
+              label: 'Undo', textColor: AppColors.accent, onPressed: onUndo)
           : null,
       duration: const Duration(seconds: 3),
     ),

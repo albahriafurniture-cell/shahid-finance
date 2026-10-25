@@ -12,7 +12,10 @@ import '../widgets/common.dart';
 enum ReportPeriod { week, month, year }
 
 class ReportsScreen extends StatefulWidget {
-  const ReportsScreen({super.key});
+  /// When true the screen is a MainShell tab (the shell already applies
+  /// SafeArea(top)), so this screen must not inset a second time.
+  final bool asTab;
+  const ReportsScreen({super.key, this.asTab = false});
 
   @override
   State<ReportsScreen> createState() => _ReportsScreenState();
@@ -26,6 +29,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
   Widget build(BuildContext context) {
     return GlassScaffold(
       body: SafeArea(
+        top: !widget.asTab,
         child: ValueListenableBuilder<int>(
           valueListenable: Store.changes,
           builder: (context, _, _) {
@@ -390,7 +394,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 width: 32,
                 height: 32,
                 decoration: BoxDecoration(
-                  color: income ? AppColors.mintTint : AppColors.expenseTint,
+                  color: income ? AppColors.accentTint : AppColors.expenseTint,
                   borderRadius: BorderRadius.circular(9),
                 ),
                 child: Icon(

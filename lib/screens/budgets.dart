@@ -344,7 +344,7 @@ class _BudgetsScreenState extends State<BudgetsScreen> {
         ? ('Over budget', AppColors.expenseTint, AppColors.expense)
         : near
             ? ('Near limit', AppColors.warningTint, AppColors.warningText)
-            : ('On track', AppColors.mintTint, AppColors.brandDeep);
+            : ('On track', AppColors.accentTint, AppColors.brandDeep);
     final barColor =
         over ? AppColors.expense : (near ? AppColors.warning : AppColors.brand);
     return GestureDetector(

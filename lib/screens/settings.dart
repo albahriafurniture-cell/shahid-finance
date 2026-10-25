@@ -20,12 +20,16 @@ import 'wallets.dart';
 /// Settings (budgets/settings spec §2–§3): profile, backup strip, cloud
 /// backup, wallets, preferences, security, data, about, footer.
 class SettingsScreen extends StatelessWidget {
-  const SettingsScreen({super.key});
+  /// When true the screen is a MainShell tab (the shell already applies
+  /// SafeArea(top)), so this screen must not inset a second time.
+  final bool asTab;
+  const SettingsScreen({super.key, this.asTab = false});
 
   @override
   Widget build(BuildContext context) {
     return GlassScaffold(
       body: SafeArea(
+        top: !asTab,
         child: ValueListenableBuilder<int>(
           valueListenable: Store.changes,
           builder: (context, _, _) {
@@ -233,7 +237,7 @@ class SettingsScreen extends StatelessWidget {
                 // Footer (exact, per task brief)
                 Column(
                   children: [
-                    Text('Shahid Finance · Version 1.1',
+                    Text('Shahid Finance · Version 1.1.1',
                         style: AppText.caption
                             .copyWith(color: AppColors.inkTertiary)),
                     const SizedBox(height: 4),
@@ -656,7 +660,7 @@ class SettingsScreen extends StatelessWidget {
                           }
                         },
                   child: Text('Forgot password?',
-                      style: AppText.label.copyWith(color: AppColors.lime)),
+                      style: AppText.label.copyWith(color: AppColors.accent)),
                 ),
               ),
               if (error != null && !createAccount)
@@ -668,7 +672,7 @@ class SettingsScreen extends StatelessWidget {
                     }),
                     child: Text('No account yet? Create an account instead',
                         style:
-                            AppText.label.copyWith(color: AppColors.lime)),
+                            AppText.label.copyWith(color: AppColors.accent)),
                   ),
                 ),
               Center(

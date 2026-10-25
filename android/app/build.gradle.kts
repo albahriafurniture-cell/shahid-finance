@@ -8,11 +8,15 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
-// Release signing reads key.properties at the project root. CI generates it
-// from the SHAHID_FINANCE_KEYSTORE_PASSWORD secret and restores the keystore
-// from SHAHID_FINANCE_KEYSTORE_BASE64 (see .github/workflows). When
-// key.properties is absent (fresh local checkout) the release build falls
-// back to the debug key so the project still configures.
+// Release signing reads key.properties from android/key.properties.
+// rootProject here is the android/ directory (Flutter project layout),
+// NOT the repo root — CI must write android/key.properties (see
+// .github/workflows). v1.1.0 shipped debug-signed because CI wrote the
+// file to the repo root, where Gradle never looked for it.
+// There is deliberately NO debug fallback for release builds anymore:
+// a release build without the release keystore must FAIL, never
+// silently produce a debug-signed APK (that breaks Google sign-in
+// with error 10). Debug builds are unaffected (they use debug signing).
 val keystoreProperties = Properties()
 val keystorePropertiesFile = rootProject.file("key.properties")
 if (keystorePropertiesFile.exists()) {
@@ -51,12 +55,23 @@ android {
 
     buildTypes {
         release {
-            signingConfig = if (keystorePropertiesFile.exists()) {
-                signingConfigs.getByName("release")
-            } else {
-                signingConfigs.getByName("debug")
-            }
+            // No debug fallback: if key.properties is missing, the
+            // taskGraph guard below fails the release build loudly.
+            signingConfig = signingConfigs.getByName("release")
         }
+    }
+}
+
+// Fail loudly (with a clear reason) instead of signing a "release" APK
+// with the debug key when the release keystore is not configured.
+gradle.taskGraph.whenReady {
+    if (gradle.taskGraph.allTasks.any { it.name == "assembleRelease" } &&
+        !keystorePropertiesFile.exists()
+    ) {
+        throw GradleException(
+            "Release signing not configured: android/key.properties is " +
+                "missing. Refusing to build a debug-signed release APK."
+        )
     }
 }
 

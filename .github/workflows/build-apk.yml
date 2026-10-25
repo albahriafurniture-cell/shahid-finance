@@ -29,18 +29,35 @@ jobs:
         env:
           KEYSTORE_PASSWORD: ${{ secrets.SHAHID_FINANCE_KEYSTORE_PASSWORD }}
         run: |
-          if [ -n "$KEYSTORE_PASSWORD" ]; then
-            openssl enc -d -aes-256-cbc -salt -pbkdf2 -in android/app/shahid-finance-release.keystore.enc -out android/app/shahid-finance-release.keystore -pass env:KEYSTORE_PASSWORD
-            cat > key.properties <<EOF
+          # FAIL FAST (v1.1.1): the secret must exist AND decrypt must
+          # succeed. Never silently fall back to a debug-signed APK.
+          if [ -z "$KEYSTORE_PASSWORD" ]; then
+            echo "::error::SHAHID_FINANCE_KEYSTORE_PASSWORD secret is missing or empty."
+            exit 1
+          fi
+          if ! openssl enc -d -aes-256-cbc -salt -pbkdf2 -in android/app/shahid-finance-release.keystore.enc -out android/app/shahid-finance-release.keystore -pass env:KEYSTORE_PASSWORD; then
+            echo "::error::Release keystore decrypt failed - check SHAHID_FINANCE_KEYSTORE_PASSWORD."
+            exit 1
+          fi
+          # PATH FIX (v1.1.1 - the actual v1.1.0 bug): Gradle reads
+          # rootProject.file("key.properties"), and for a Flutter Android
+          # project rootProject is android/ - NOT the repo root. The old
+          # workflow wrote key.properties to the repo root, so Gradle
+          # never saw it and silently fell back to debug signing even
+          # though this step printed "Release signing configured."
+          # storeFile is resolved relative to android/app/, where the
+          # decrypted keystore lives, so that value is unchanged.
+          cat > android/key.properties <<EOF
           storePassword=$KEYSTORE_PASSWORD
           keyPassword=$KEYSTORE_PASSWORD
           keyAlias=shahidfinance
           storeFile=shahid-finance-release.keystore
           EOF
-            echo "Release signing configured."
-          else
-            echo "No keystore secret set - building a DEBUG-signed release APK for testing."
+          if [ ! -s android/key.properties ] || [ ! -s android/app/shahid-finance-release.keystore ]; then
+            echo "::error::Release keystore or android/key.properties missing after restore."
+            exit 1
           fi
+          echo "Release signing configured (android/key.properties)."
 
       - name: Flutter pub get
         run: flutter pub get
@@ -51,12 +68,35 @@ jobs:
       - name: Build release APK
         run: flutter build apk --release
 
+      - name: Verify release certificate SHA-1
+        run: |
+          # BELT AND BRACES (v1.1.1): the shipped APK must carry the
+          # release keystore certificate registered in Firebase, or
+          # Google sign-in fails with error 10. Fail the job here,
+          # before upload, if the certificate is anything else
+          # (e.g. the Android Debug certificate).
+          APK="build/app/outputs/flutter-apk/app-release.apk"
+          EXPECTED="9B:5D:84:36:B2:5E:22:5A:3C:21:BE:05:C5:DF:DA:10:AA:9B:28:2E"
+          SHA1=""
+          APKSIGNER="$(ls "$ANDROID_HOME"/build-tools/*/apksigner 2>/dev/null | sort -V | tail -n 1)"
+          if [ -n "$APKSIGNER" ]; then
+            SHA1="$("$APKSIGNER" verify --print-certs "$APK" 2>/dev/null | grep -oiP 'SHA-1 digest:\s*\K[0-9A-Fa-f:]+' | head -n 1)"
+          fi
+          if [ -z "$SHA1" ]; then
+            SHA1="$(keytool -printcert -jarfile "$APK" 2>/dev/null | grep -oiP 'SHA1:\s*\K[0-9A-Fa-f:]+' | head -n 1)"
+          fi
+          echo "APK signing certificate SHA-1: ${SHA1:-unknown}"
+          if [ "$SHA1" != "$EXPECTED" ]; then
+            echo "::error::APK is NOT signed with the registered release keystore (expected SHA-1 $EXPECTED, got ${SHA1:-unknown}). Refusing to ship a debug-signed release APK."
+            exit 1
+          fi
+
       - name: Rename APK
-        run: cp build/app/outputs/flutter-apk/app-release.apk Shahid-Finance-v1.1.0.apk
+        run: cp build/app/outputs/flutter-apk/app-release.apk Shahid-Finance-v1.1.1.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Shahid-Finance-v1.1.0-APK
-          path: Shahid-Finance-v1.1.0.apk
+          name: Shahid-Finance-v1.1.1-APK
+          path: Shahid-Finance-v1.1.1.apk
           retention-days: 30

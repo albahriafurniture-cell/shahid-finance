@@ -147,7 +147,7 @@ Future<void> showTransferSheet(BuildContext context,
                         padding: const EdgeInsets.symmetric(horizontal: 12),
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
-                          color: AppColors.mintTint,
+                          color: AppColors.accentTint,
                           borderRadius:
                               BorderRadius.circular(AppRadius.pill),
                         ),

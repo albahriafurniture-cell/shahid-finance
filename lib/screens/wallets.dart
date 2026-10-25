@@ -90,7 +90,7 @@ class WalletsScreen extends StatelessWidget {
                           width: 44,
                           height: 44,
                           decoration: BoxDecoration(
-                            color: AppColors.mintTint,
+                            color: AppColors.accentTint,
                             borderRadius:
                                 BorderRadius.circular(AppRadius.sm),
                           ),
@@ -220,7 +220,7 @@ class WalletsScreen extends StatelessWidget {
                               const EdgeInsets.symmetric(horizontal: 8),
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
-                            color: AppColors.mintTint,
+                            color: AppColors.accentTint,
                             borderRadius:
                                 BorderRadius.circular(AppRadius.pill),
                           ),
@@ -538,7 +538,7 @@ class WalletDetailScreen extends StatelessWidget {
                                             horizontal: 8),
                                         alignment: Alignment.center,
                                         decoration: BoxDecoration(
-                                          color: AppColors.mintTint,
+                                          color: AppColors.accentTint,
                                           borderRadius:
                                               BorderRadius.circular(
                                                   AppRadius.pill),

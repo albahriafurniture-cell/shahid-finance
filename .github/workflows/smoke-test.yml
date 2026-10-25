@@ -27,20 +27,58 @@ jobs:
         env:
           KEYSTORE_PASSWORD: ${{ secrets.SHAHID_FINANCE_KEYSTORE_PASSWORD }}
         run: |
-          if [ -n "$KEYSTORE_PASSWORD" ]; then
-            openssl enc -d -aes-256-cbc -salt -pbkdf2 -in android/app/shahid-finance-release.keystore.enc -out android/app/shahid-finance-release.keystore -pass env:KEYSTORE_PASSWORD
-            cat > key.properties <<EOF
+          # FAIL FAST (v1.1.1): never silently fall back to debug signing.
+          if [ -z "$KEYSTORE_PASSWORD" ]; then
+            echo "::error::SHAHID_FINANCE_KEYSTORE_PASSWORD secret is missing or empty."
+            exit 1
+          fi
+          if ! openssl enc -d -aes-256-cbc -salt -pbkdf2 -in android/app/shahid-finance-release.keystore.enc -out android/app/shahid-finance-release.keystore -pass env:KEYSTORE_PASSWORD; then
+            echo "::error::Release keystore decrypt failed - check SHAHID_FINANCE_KEYSTORE_PASSWORD."
+            exit 1
+          fi
+          # PATH FIX (v1.1.1 - the actual v1.1.0 bug): Gradle reads
+          # rootProject.file("key.properties"), and for a Flutter Android
+          # project rootProject is android/ - NOT the repo root. The old
+          # workflow wrote key.properties to the repo root, so Gradle
+          # never saw it and silently fell back to debug signing.
+          # storeFile resolves relative to android/app/, so unchanged.
+          cat > android/key.properties <<EOF
           storePassword=$KEYSTORE_PASSWORD
           keyPassword=$KEYSTORE_PASSWORD
           keyAlias=shahidfinance
           storeFile=shahid-finance-release.keystore
           EOF
+          if [ ! -s android/key.properties ] || [ ! -s android/app/shahid-finance-release.keystore ]; then
+            echo "::error::Release keystore or android/key.properties missing after restore."
+            exit 1
           fi
+          echo "Release signing configured (android/key.properties)."
 
       - name: Build release APK
         run: |
           flutter pub get
           flutter build apk --release
+
+      - name: Verify release certificate SHA-1
+        run: |
+          # Same belt-and-braces check as build-apk.yml: refuse to boot
+          # an APK that is not signed with the Firebase-registered
+          # release keystore (Google sign-in error 10 otherwise).
+          APK="build/app/outputs/flutter-apk/app-release.apk"
+          EXPECTED="9B:5D:84:36:B2:5E:22:5A:3C:21:BE:05:C5:DF:DA:10:AA:9B:28:2E"
+          SHA1=""
+          APKSIGNER="$(ls "$ANDROID_HOME"/build-tools/*/apksigner 2>/dev/null | sort -V | tail -n 1)"
+          if [ -n "$APKSIGNER" ]; then
+            SHA1="$("$APKSIGNER" verify --print-certs "$APK" 2>/dev/null | grep -oiP 'SHA-1 digest:\s*\K[0-9A-Fa-f:]+' | head -n 1)"
+          fi
+          if [ -z "$SHA1" ]; then
+            SHA1="$(keytool -printcert -jarfile "$APK" 2>/dev/null | grep -oiP 'SHA1:\s*\K[0-9A-Fa-f:]+' | head -n 1)"
+          fi
+          echo "APK signing certificate SHA-1: ${SHA1:-unknown}"
+          if [ "$SHA1" != "$EXPECTED" ]; then
+            echo "::error::APK is NOT signed with the registered release keystore (expected SHA-1 $EXPECTED, got ${SHA1:-unknown})."
+            exit 1
+          fi
 
       - name: Enable KVM
         run: |

@@ -61,8 +61,10 @@ class HomeScreen extends StatelessWidget {
           }
         }
 
+        // Top clearance is status-bar height (MainShell SafeArea) + 12,
+        // so the header never collides with the status bar (v1.1.1 fix).
         return ListView(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 120),
           children: [
             // Header
             Row(
@@ -71,7 +73,7 @@ class HomeScreen extends StatelessWidget {
                   width: 44,
                   height: 44,
                   decoration: const BoxDecoration(
-                    color: AppColors.mintTint,
+                    color: AppColors.accentTint,
                     shape: BoxShape.circle,
                   ),
                   alignment: Alignment.center,
@@ -268,7 +270,7 @@ class HomeScreen extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: AppColors.lime,
+        color: AppColors.accent,
         borderRadius: BorderRadius.circular(AppRadius.pill),
       ),
       child: Text(label,
@@ -311,7 +313,7 @@ class HomeScreen extends StatelessWidget {
               if (caption != null)
                 Text(caption,
                     style: AppText.caption.copyWith(
-                        fontSize: 11, color: AppColors.mint)),
+                        fontSize: 11, color: AppColors.accent)),
             ],
           ),
         ),
@@ -338,7 +340,7 @@ class HomeScreen extends StatelessWidget {
               border: Border.all(color: AppColors.hairline),
               boxShadow: AppShadows.card,
             ),
-            child: Icon(icon, size: 22, color: AppColors.lime),
+            child: Icon(icon, size: 22, color: AppColors.accent),
           ),
           const SizedBox(height: 6),
           Text(label, style: AppText.label.copyWith(fontSize: 11)),

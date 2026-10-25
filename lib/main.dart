@@ -9,6 +9,7 @@ import 'widgets/dock.dart';
 import 'screens/add_transaction.dart';
 import 'screens/home.dart';
 import 'screens/onboarding.dart';
+import 'screens/password_manager.dart';
 import 'screens/pin_lock.dart';
 import 'screens/reports.dart';
 import 'screens/settings.dart';
@@ -103,7 +104,11 @@ class _GateState extends State<Gate> {
   }
 }
 
-/// Main shell: 4 tabs + the floating dock (which owns its FAB fan).
+/// Main shell: 5 tabs (Home, History, Vault, Reports, Profile) + the
+/// floating dock (which owns its FAB fan).
+/// ORDER 1 fix (v1.1.1): the tab content sits inside SafeArea(top) so no
+/// tab header ever draws under the Android status bar again — the
+/// aurora background stays full-bleed behind it.
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
 
@@ -127,15 +132,20 @@ class _MainShellState extends State<MainShell> {
       body: Stack(
         children: [
           const AuroraBackground(),
-          IndexedStack(
-            index: _tab,
-            children: [
-              HomeScreen(
-                  onSeeAllTransactions: () => setState(() => _tab = 1)),
-              const TransactionsScreen(),
-              const ReportsScreen(),
-              const SettingsScreen(),
-            ],
+          SafeArea(
+            top: true,
+            bottom: false,
+            child: IndexedStack(
+              index: _tab,
+              children: [
+                HomeScreen(
+                    onSeeAllTransactions: () => setState(() => _tab = 1)),
+                const TransactionsScreen(),
+                const PasswordManagerScreen(asTab: true),
+                const ReportsScreen(asTab: true),
+                const SettingsScreen(asTab: true),
+              ],
+            ),
           ),
           Positioned.fill(
             child: FloatingDock(

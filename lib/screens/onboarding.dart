@@ -236,7 +236,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       width: 300,
       height: 240,
       decoration: const BoxDecoration(
-        color: AppColors.mintTint,
+        color: AppColors.accentTint,
         borderRadius: BorderRadius.only(
           topLeft: Radius.circular(36),
           topRight: Radius.circular(28),
@@ -313,7 +313,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         Positioned(
           right: 52,
           bottom: 38,
-          child: coin('Rs', AppColors.mint, AppColors.canvas, 44),
+          child: coin('Rs', AppColors.accent, AppColors.canvas, 44),
         ),
         Positioned(
           right: 30,
@@ -333,7 +333,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             for (final (h, c) in [
-              (60.0, AppColors.mint),
+              (60.0, AppColors.accent),
               (95.0, AppColors.info),
               (135.0, AppColors.warning),
             ]) ...[
@@ -392,13 +392,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           child: CircularProgressIndicator(
             value: 0.7,
             strokeWidth: 10,
-            backgroundColor: AppColors.mint,
+            backgroundColor: AppColors.accent,
             valueColor:
                 const AlwaysStoppedAnimation<Color>(AppColors.brandDeep),
           ),
         ),
         const Icon(Icons.shield, size: 110, color: AppColors.brand),
-        const Icon(Icons.check, size: 52, color: AppColors.mintTint),
+        const Icon(Icons.check, size: 52, color: AppColors.accentTint),
         Positioned(
           right: 62,
           top: 34,
@@ -500,7 +500,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         width: 36,
                         height: 36,
                         decoration: const BoxDecoration(
-                          color: AppColors.mintTint,
+                          color: AppColors.accentTint,
                           shape: BoxShape.circle,
                         ),
                         alignment: Alignment.center,

@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 import '../data/store.dart';
@@ -66,12 +67,31 @@ class BackupService {
     // Google Play services ApiException 10 = DEVELOPER_ERROR: the APK's
     // signing SHA-1 is not registered for this OAuth client. Only a
     // release-signed build (the 9B:5D:…:2E keystore) can Google-sign-in.
-    if (text.contains('ApiException: 10') ||
+    // v1.1.1 fix: google_sign_in 6.3 does NOT throw ApiException here —
+    // it throws PlatformException(sign_in_failed, "10: ..."), which is
+    // exactly what the user's v1.1.0 screenshot showed raw. Match error
+    // 10 in EVERY form, and never surface a raw PlatformException string.
+    final platformMsg =
+        e is PlatformException ? (e.message ?? '') : '';
+    final isError10 = text.contains('ApiException: 10') ||
         text.contains('statusCode: 10') ||
-        text.contains('DEVELOPER_ERROR')) {
+        text.contains('DEVELOPER_ERROR') ||
+        (e is PlatformException &&
+            e.code == 'sign_in_failed' &&
+            (platformMsg.contains('10') ||
+                RegExp(r'(^|[^0-9])10([^0-9]|$)').hasMatch(platformMsg))) ||
+        RegExp(r'sign_in_failed[^)]*\b10\b').hasMatch(text);
+    if (isError10) {
       return 'Google sign-in failed (error 10): this build is not signed '
-          'with the registered release key. Install the release-signed APK, '
-          'not a debug build.';
+          'with the registered release key. Install the release-signed APK '
+          'from the official link, not a debug build.';
+    }
+    if (e is PlatformException) {
+      // Any other platform-level sign-in failure: plain words only,
+      // never the raw "PlatformException(...)" string.
+      return 'Google sign-in failed. Please try again — and make sure you '
+          'are using the release-signed APK from the official link, not a '
+          'debug build.';
     }
     if (e is FirebaseAuthException) {
       switch (e.code) {
@@ -100,8 +120,8 @@ class BackupService {
           return '$detail (code: ${e.code})';
       }
     }
-    // Never swallow the real error into a generic line again.
-    return 'Sign-in failed: $text';
+    // Generic fallback — plain words only, never a raw exception string.
+    return 'Sign-in failed. Please try again.';
   }
 
   static Future<void> signInWithEmail(String email, String password) async {
@@ -179,7 +199,7 @@ class BackupService {
     await _backupDoc(user.uid).set({
       'data': snapshot,
       'updatedAt': FieldValue.serverTimestamp(),
-      'appVersion': '1.1.0',
+      'appVersion': '1.1.1',
     });
     final now = DateTime.now();
     await Store.settings.put('lastBackupAt', now.toIso8601String());
