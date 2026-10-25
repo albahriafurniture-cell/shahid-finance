@@ -75,7 +75,13 @@ jobs:
             SHA1="$(keytool -printcert -jarfile "$APK" 2>/dev/null | grep -oiP 'SHA1:\s*\K[0-9A-Fa-f:]+' | head -n 1)"
           fi
           echo "APK signing certificate SHA-1: ${SHA1:-unknown}"
-          if [ "$SHA1" != "$EXPECTED" ]; then
+          # NORMALIZE (v1.1.1 fix): apksigner prints lowercase hex with no
+          # colons, keytool prints uppercase with colons — compare digits
+          # only, ignoring case and colons, or a correctly signed APK
+          # fails this check on format alone (as build run #6 did).
+          SHA1_NORM="$(echo "${SHA1:-}" | tr -d ':' | tr 'a-z' 'A-Z')"
+          EXPECTED_NORM="$(echo "$EXPECTED" | tr -d ':' | tr 'a-z' 'A-Z')"
+          if [ "$SHA1_NORM" != "$EXPECTED_NORM" ]; then
             echo "::error::APK is NOT signed with the registered release keystore (expected SHA-1 $EXPECTED, got ${SHA1:-unknown})."
             exit 1
           fi
