@@ -5,8 +5,8 @@ import '../data/models.dart';
 import '../data/store.dart';
 import '../theme.dart';
 import '../utils/format.dart';
-import '../utils/icons.dart';
 import '../widgets/common.dart';
+import '../widgets/wallet_logo.dart';
 import '../widgets/transfer_sheet.dart';
 import 'transactions.dart';
 
@@ -176,7 +176,6 @@ class WalletsScreen extends StatelessWidget {
   }
 
   Widget _walletCard(BuildContext context, Wallet w) {
-    final style = walletStyleFor(w.type);
     final balance = Store.balanceOf(w.id);
     final count = Store.txnCountForWallet(w.id);
     return GestureDetector(
@@ -188,16 +187,7 @@ class WalletsScreen extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Row(
           children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: Color(style.tint),
-                borderRadius: BorderRadius.circular(AppRadius.sm),
-              ),
-              child: Icon(iconFor(style.iconKey),
-                  size: 22, color: Color(style.strong)),
-            ),
+            WalletAvatar(type: w.type, size: 44),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -311,19 +301,7 @@ Future<void> showAddWalletSheet(BuildContext context) async {
                   height: 56,
                   child: Row(
                     children: [
-                      Container(
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          color: Color(walletStyleFor(e.key).tint),
-                          borderRadius:
-                              BorderRadius.circular(AppRadius.sm),
-                        ),
-                        child: Icon(
-                            iconFor(walletStyleFor(e.key).iconKey),
-                            size: 22,
-                            color: Color(walletStyleFor(e.key).strong)),
-                      ),
+                      WalletAvatar(type: e.key, size: 44),
                       const SizedBox(width: 12),
                       Expanded(child: Text(e.value, style: AppText.body)),
                       Container(
@@ -468,7 +446,6 @@ class WalletDetailScreen extends StatelessWidget {
             if (w == null) {
               return const Center(child: Text('Wallet not found'));
             }
-            final style = walletStyleFor(w.type);
             final balance = Store.balanceOf(w.id);
             final now = DateTime.now();
             final monthTxns = Store.txnsInMonth(now.year, now.month)
@@ -505,17 +482,7 @@ class WalletDetailScreen extends StatelessWidget {
                     children: [
                       Row(
                         children: [
-                          Container(
-                            width: 56,
-                            height: 56,
-                            decoration: BoxDecoration(
-                              color: Color(style.tint),
-                              borderRadius:
-                                  BorderRadius.circular(AppRadius.sm),
-                            ),
-                            child: Icon(iconFor(style.iconKey),
-                                size: 28, color: Color(style.strong)),
-                          ),
+                          WalletAvatar(type: w.type, size: 56),
                           const SizedBox(width: 12),
                           Expanded(
                             child: Column(

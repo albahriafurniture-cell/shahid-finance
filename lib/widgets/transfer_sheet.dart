@@ -5,8 +5,8 @@ import '../data/models.dart';
 import '../data/store.dart';
 import '../theme.dart';
 import '../utils/format.dart';
-import '../utils/icons.dart';
 import 'common.dart';
+import 'wallet_logo.dart';
 
 /// Wallet picker sheet: radio list of active wallets with balances.
 /// Returns the chosen wallet, or null when dismissed.
@@ -23,16 +23,7 @@ Future<Wallet?> showWalletPicker(BuildContext context,
         for (final w in wallets)
           ListTile(
             contentPadding: EdgeInsets.zero,
-            leading: Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: Color(walletStyleFor(w.type).tint),
-                borderRadius: BorderRadius.circular(AppRadius.sm),
-              ),
-              child: Icon(iconFor(walletStyleFor(w.type).iconKey),
-                  size: 22, color: Color(walletStyleFor(w.type).strong)),
-            ),
+            leading: WalletAvatar(type: w.type, size: 44),
             title: Text(w.name, style: AppText.bodyStrong),
             subtitle: Text(w.caption,
                 style:

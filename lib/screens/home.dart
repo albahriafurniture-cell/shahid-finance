@@ -9,7 +9,6 @@ import '../widgets/transfer_sheet.dart';
 import 'add_transaction.dart';
 import 'budgets.dart';
 import 'transactions.dart';
-import 'password_manager.dart';
 import 'wallets.dart';
 
 /// Home dashboard (master Screen 3).
@@ -69,20 +68,13 @@ class HomeScreen extends StatelessWidget {
             // Header
             Row(
               children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: const BoxDecoration(
-                    color: AppColors.accentTint,
-                    shape: BoxShape.circle,
-                  ),
-                  alignment: Alignment.center,
-                  child: Text(
-                    Store.userName.isEmpty
-                        ? 'S'
-                        : Store.userName[0].toUpperCase(),
-                    style: AppText.bodyStrong
-                        .copyWith(color: AppColors.brandDeep, fontSize: 17),
+                ClipOval(
+                  // v1.1.2: profile DP is the user's own photo.
+                  child: Image.asset(
+                    'assets/images/profile_photo.jpg',
+                    width: 44,
+                    height: 44,
+                    fit: BoxFit.cover,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -93,7 +85,7 @@ class HomeScreen extends StatelessWidget {
                       Text(_greeting,
                           style: AppText.caption
                               .copyWith(color: AppColors.inkSecondary)),
-                      Text(Store.userName.isEmpty ? 'Shahid' : Store.userName,
+                      Text(Store.userName.isEmpty ? 'SHAHID' : Store.userName,
                           style: AppText.bodyStrong.copyWith(fontSize: 16)),
                     ],
                   ),
@@ -188,13 +180,6 @@ class HomeScreen extends StatelessWidget {
                   icon: Icons.south_west,
                   label: 'Add Income',
                   onTap: () => _openAdd(context, income: true),
-                ),
-                _quickAction(
-                  context,
-                  icon: Icons.key_outlined,
-                  label: 'Passwords',
-                  onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                      builder: (_) => const PasswordManagerScreen())),
                 ),
                 _quickAction(
                   context,

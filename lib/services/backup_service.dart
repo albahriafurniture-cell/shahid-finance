@@ -199,7 +199,7 @@ class BackupService {
     await _backupDoc(user.uid).set({
       'data': snapshot,
       'updatedAt': FieldValue.serverTimestamp(),
-      'appVersion': '1.1.1',
+      'appVersion': '1.1.2',
     });
     final now = DateTime.now();
     await Store.settings.put('lastBackupAt', now.toIso8601String());

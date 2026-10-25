@@ -7,8 +7,10 @@ import '../theme.dart';
 /// Floating bottom navigation with the signature centre FAB fan
 /// (master §3.5): tap + → Add Income / Add Expense mini-actions.
 class FloatingDock extends StatefulWidget {
-  // 0 Home, 1 History, 2 Vault, 3 Reports, 4 Profile (v1.1.1: Vault added
-  // as a visible dock tab; centre + FAB fan untouched).
+  // 0 Home, 1 History, 2 Reports, 3 Profile. Two tabs each side of
+  // the centre FAB slot, so the slot centre == screen centre and the
+  // FAB can never overlap a tab (the v1.1.1 bug: 2 left / 3 right tabs
+  // pushed the slot centre ~27dp off the FAB centre).
   final int currentIndex;
   final ValueChanged<int> onTab;
   final VoidCallback onAddIncome;
@@ -102,10 +104,9 @@ class _FloatingDockState extends State<FloatingDock> {
               _tab(0, Icons.home_outlined, Icons.home, 'Home'),
               _tab(1, Icons.receipt_long_outlined, Icons.receipt_long,
                   'History'),
-              const SizedBox(width: 56), // FAB slot
-              _tab(2, Icons.lock_outlined, Icons.lock, 'Vault'),
-              _tab(3, Icons.bar_chart_outlined, Icons.bar_chart, 'Reports'),
-              _tab(4, Icons.person_outline, Icons.person, 'Profile'),
+              const SizedBox(width: 64), // FAB slot — centred on screen
+              _tab(2, Icons.bar_chart_outlined, Icons.bar_chart, 'Reports'),
+              _tab(3, Icons.person_outline, Icons.person, 'Profile'),
               ],
               ),
             ),
@@ -187,9 +188,9 @@ class _FloatingDockState extends State<FloatingDock> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              // Narrowed for 5 tabs + FAB slot so every label stays
-              // readable and tappable on a 360dp screen (v1.1.1).
-              width: 40,
+              // Generous 4-tab sizing (v1.1.2): every icon + label fully
+              // visible and tappable on a 360dp screen, no overlap.
+              width: 44,
               height: 30,
               decoration: BoxDecoration(
                 color: selected ? AppColors.accent : Colors.transparent,
@@ -197,7 +198,7 @@ class _FloatingDockState extends State<FloatingDock> {
               ),
               child: Icon(
                 selected ? iconFilled : icon,
-                size: 22,
+                size: 24,
                 color: selected
                     ? AppColors.canvas
                     : AppColors.inkTertiary,
@@ -207,7 +208,7 @@ class _FloatingDockState extends State<FloatingDock> {
             Text(
               label,
               style: AppText.caption.copyWith(
-                fontSize: 10,
+                fontSize: 11,
                 fontWeight: FontWeight.w600,
                 color: selected
                     ? AppColors.accent

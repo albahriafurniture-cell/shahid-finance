@@ -208,7 +208,9 @@ class _PinLockScreenState extends State<PinLockScreen>
   String get _title {
     if (_isSet) return _confirmStep ? 'Confirm your PIN' : 'Create your PIN';
     if (widget.mode == PinMode.verify) return 'Enter your current PIN';
-    return Store.userName.isEmpty ? 'Welcome back' : 'Welcome back, ${Store.userName}';
+    return Store.userName.isEmpty
+        ? 'Welcome back, SHAHID'
+        : 'Welcome back, ${Store.userName}';
   }
 
   String get _subtitle {
@@ -269,19 +271,13 @@ class _PinLockScreenState extends State<PinLockScreen>
                       size: 30, color: AppColors.brandDeep),
                 )
               else
-                Container(
-                  width: 64,
-                  height: 64,
-                  decoration: const BoxDecoration(
-                    color: AppColors.accentTint,
-                    shape: BoxShape.circle,
-                  ),
-                  alignment: Alignment.center,
-                  child: Text(
-                    Store.userName.isEmpty
-                        ? 'S'
-                        : Store.userName[0].toUpperCase(),
-                    style: AppText.h1.copyWith(color: AppColors.brandDeep),
+                ClipOval(
+                  // v1.1.2: profile DP is the user's own photo.
+                  child: Image.asset(
+                    'assets/images/profile_photo.jpg',
+                    width: 64,
+                    height: 64,
+                    fit: BoxFit.cover,
                   ),
                 ),
               const SizedBox(height: 16),

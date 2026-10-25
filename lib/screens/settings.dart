@@ -7,13 +7,11 @@ import 'package:share_plus/share_plus.dart';
 
 import '../data/store.dart';
 import '../services/backup_service.dart';
-import '../services/vault_service.dart';
 import '../services/pin_service.dart';
 import '../theme.dart';
 import '../utils/format.dart';
 import '../widgets/common.dart';
 import '../widgets/transfer_sheet.dart' show showWalletPicker;
-import 'password_manager.dart';
 import 'pin_lock.dart';
 import 'wallets.dart';
 
@@ -43,21 +41,6 @@ class SettingsScreen extends StatelessWidget {
                 _backupStrip(context),
                 const SizedBox(height: 24),
                 _cloudBackupGroup(context),
-                const SizedBox(height: 24),
-                _groupLabel('PASSWORD MANAGER'),
-                GroupCard(children: [
-                  _navRow(
-                    icon: Icons.key_outlined,
-                    label: 'Password Manager',
-                    value: VaultService.ready
-                        ? '${VaultService.entries.length}'
-                        : '—',
-                    onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                            builder: (_) =>
-                                const PasswordManagerScreen())),
-                  ),
-                ]),
                 const SizedBox(height: 24),
                 _groupLabel('WALLETS'),
                 GroupCard(children: [
@@ -237,7 +220,7 @@ class SettingsScreen extends StatelessWidget {
                 // Footer (exact, per task brief)
                 Column(
                   children: [
-                    Text('Shahid Finance · Version 1.1.1',
+                    Text('Shahid Finance · Version 1.1.2',
                         style: AppText.caption
                             .copyWith(color: AppColors.inkTertiary)),
                     const SizedBox(height: 4),
@@ -265,8 +248,9 @@ class SettingsScreen extends StatelessWidget {
       child: Row(
         children: [
           ClipOval(
+            // v1.1.2: profile DP is the user's own photo, not the app icon.
             child: Image.asset(
-              'assets/images/app_icon.png',
+              'assets/images/profile_photo.jpg',
               width: 52,
               height: 52,
               fit: BoxFit.cover,
@@ -277,7 +261,7 @@ class SettingsScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(name.isEmpty ? 'Your name' : name,
+                Text(name.isEmpty ? 'SHAHID' : name,
                     style: AppText.bodyStrong),
                 const SizedBox(height: 2),
                 Text(
@@ -502,7 +486,10 @@ class SettingsScreen extends StatelessWidget {
           PrimaryButton(
             label: 'Save',
             onTap: () async {
-              await Store.setSetting('userName', nameCtrl.text.trim());
+              // v1.1.2: profile name is SHAHID, exactly — never "Shahid Lucky".
+              final typed = nameCtrl.text.trim();
+              await Store.setSetting('userName',
+                  typed.toLowerCase() == 'shahid lucky' ? 'SHAHID' : typed);
               await Store.setSetting('userPhone', phoneCtrl.text.trim());
               if (context.mounted) Navigator.of(context).pop();
             },

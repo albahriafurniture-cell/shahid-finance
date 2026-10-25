@@ -4,8 +4,8 @@ import '../data/models.dart';
 import '../data/store.dart';
 import '../theme.dart';
 import '../utils/format.dart';
-import '../utils/icons.dart';
 import '../widgets/common.dart';
+import '../widgets/wallet_logo.dart';
 import 'add_transaction.dart';
 
 /// Transactions (master Screen 5 + transactions spec §1): search, month
@@ -642,19 +642,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                     height: 56,
                     child: Row(
                       children: [
-                        Container(
-                          width: 40,
-                          height: 40,
-                          decoration: BoxDecoration(
-                            color: Color(walletStyleFor(w.type).tint),
-                            borderRadius:
-                                BorderRadius.circular(AppRadius.sm),
-                          ),
-                          child: Icon(
-                              iconFor(walletStyleFor(w.type).iconKey),
-                              size: 20,
-                              color: Color(walletStyleFor(w.type).strong)),
-                        ),
+                        WalletAvatar(type: w.type, size: 40),
                         const SizedBox(width: 12),
                         Expanded(
                             child: Text(w.name, style: AppText.bodyStrong)),

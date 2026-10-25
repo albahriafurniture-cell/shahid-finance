@@ -46,6 +46,12 @@ class Store {
     registerAdapters();
     await _openBoxes();
     await seedDefaults();
+    // v1.1.2 migration (user order, exact): the profile name is SHAHID.
+    // A stored "Shahid Lucky" (any case) is migrated to "SHAHID" once.
+    final stored = setting('userName', '');
+    if (stored.trim().toLowerCase() == 'shahid lucky') {
+      await settings.put('userName', 'SHAHID');
+    }
   }
 
   /// Test/boot path: Hive already initialised against a directory.

@@ -74,7 +74,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       setState(() => _nameError = true);
       return;
     }
-    await Store.setSetting('userName', _nameCtrl.text.trim());
+    // v1.1.2: profile name is SHAHID, exactly — never "Shahid Lucky".
+    final typed = _nameCtrl.text.trim();
+    await Store.setSetting(
+        'userName', typed.toLowerCase() == 'shahid lucky' ? 'SHAHID' : typed);
     if (!mounted) return;
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -448,7 +451,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   onChanged: (_) => setState(() => _nameError = false),
                   decoration: InputDecoration(
                     counterText: '',
-                    hintText: 'e.g. Shahid',
+                    hintText: 'e.g. SHAHID',
                     hintStyle: AppText.body
                         .copyWith(color: AppColors.inkTertiary),
                     filled: true,
