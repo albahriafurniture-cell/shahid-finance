@@ -1,8 +1,12 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../data/models.dart';
 import '../data/store.dart';
+import '../services/receipt_service.dart';
 import '../theme.dart';
 import '../utils/format.dart';
 import '../utils/icons.dart';
@@ -38,11 +42,22 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   AppCategory? _category;
   Wallet? _wallet;
   late DateTime _date;
+  // v1.1.4 receipt: id is fixed up front so the photo file name can
+  // be derived before saving; preview file for a newly picked photo.
+  late final String _txnId;
+  String _receiptFileName = '';
+  File? _receiptPreview;
+  Future<File?>? _receiptExistingFuture;
 
   @override
   void initState() {
     super.initState();
     final ex = widget.existing;
+    _txnId = ex?.id ?? newId();
+    _receiptFileName = ex?.receiptPath ?? '';
+    if (_receiptFileName.isNotEmpty) {
+      _receiptExistingFuture = ReceiptService.fileFor(_receiptFileName);
+    }
     _income = ex != null ? ex.isIncome : widget.initialIncome;
     _amountCtrl = TextEditingController(
         text: ex != null ? groupPakistani(ex.amount.abs()) : '');
@@ -82,6 +97,29 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     });
   }
 
+  Future<void> _pickReceipt(ImageSource source) async {
+    try {
+      final picked = await ImagePicker().pickImage(
+        source: source,
+        maxWidth: 1600,
+        imageQuality: 85,
+      );
+      // Cancelled picker/camera: expense still saves fine, no receipt.
+      if (picked == null) return;
+      setState(() => _receiptPreview = File(picked.path));
+      // Copy into app storage now (keyed by txn id); the file name is
+      // stored on save. A copy failure leaves receipt empty, never
+      // blocks the save.
+      final saved = await ReceiptService.savePicked(picked.path, _txnId);
+      if (mounted) setState(() => _receiptFileName = saved);
+    } catch (_) {
+      if (mounted) {
+        appSnack(context,
+            'Could not attach the receipt — the expense can still be saved.');
+      }
+    }
+  }
+
   Future<void> _save() async {
     if (!_valid) return;
     final now = DateTime.now();
@@ -91,7 +129,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     final dateTime = DateTime(_date.year, _date.month, _date.day,
         ex?.date.hour ?? now.hour, ex?.date.minute ?? now.minute);
     final txn = MoneyTxn(
-      id: ex?.id ?? newId(),
+      id: _txnId,
       type: _income ? 'income' : 'expense',
       amount: _amount,
       walletId: _wallet!.id,
@@ -99,6 +137,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       note: _noteCtrl.text.trim(),
       dateMs: dateTime.millisecondsSinceEpoch,
       createdAtMs: ex?.createdAtMs ?? now.millisecondsSinceEpoch,
+      receiptPath: _income ? '' : _receiptFileName,
     );
     await Store.saveTxn(txn);
     if (!mounted) return;
@@ -301,6 +340,13 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                       ],
                     ),
                   ),
+                  // v1.1.4: optional receipt, expense only. Two options:
+                  // gallery upload or direct camera photo. Cancelling
+                  // either picker leaves the expense saveable as-is.
+                  if (!_income) ...[
+                    const SizedBox(height: 24),
+                    _receiptSection(),
+                  ],
                 ],
               ),
             ),
@@ -329,6 +375,125 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _receiptSection() {
+    final hasReceipt =
+        _receiptPreview != null || _receiptFileName.isNotEmpty;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Receipt (optional)',
+            style: AppText.label.copyWith(color: AppColors.inkSecondary)),
+        const SizedBox(height: 12),
+        Container(
+          decoration: cardDecoration(),
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              if (hasReceipt) ...[
+                Stack(
+                  children: [
+                    ClipRRect(
+                      borderRadius:
+                          BorderRadius.circular(AppRadius.md),
+                      child: _receiptPreview != null
+                          ? Image.file(_receiptPreview!,
+                              height: 180,
+                              width: double.infinity,
+                              fit: BoxFit.cover)
+                          : FutureBuilder<File?>(
+                              future: _receiptExistingFuture,
+                              builder: (ctx, snap) {
+                                if (snap.data == null) {
+                                  return Container(
+                                    height: 180,
+                                    alignment: Alignment.center,
+                                    child: Text('Receipt not on this device',
+                                        style: AppText.caption.copyWith(
+                                            color: AppColors.inkTertiary)),
+                                  );
+                                }
+                                return Image.file(snap.data!,
+                                    height: 180,
+                                    width: double.infinity,
+                                    fit: BoxFit.cover);
+                              },
+                            ),
+                    ),
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: GestureDetector(
+                        onTap: () => setState(() {
+                          _receiptPreview = null;
+                          _receiptFileName = '';
+                          _receiptExistingFuture = null;
+                        }),
+                        child: Container(
+                          width: 32,
+                          height: 32,
+                          decoration: const BoxDecoration(
+                            color: Color(0xCC0F0B16),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.close,
+                              size: 18, color: Colors.white),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+              ],
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _pickReceipt(ImageSource.gallery),
+                      icon: const Icon(Icons.photo_library_outlined,
+                          size: 20),
+                      label: Text('Upload',
+                          style: AppText.bodyStrong.copyWith(fontSize: 14)),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(48),
+                        side:
+                            const BorderSide(color: AppColors.hairline),
+                        shape: RoundedRectangleBorder(
+                            borderRadius:
+                                BorderRadius.circular(AppRadius.md)),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _pickReceipt(ImageSource.camera),
+                      icon: const Icon(Icons.camera_alt_outlined,
+                          size: 20),
+                      label: Text('Take photo',
+                          style: AppText.bodyStrong.copyWith(fontSize: 14)),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(48),
+                        side:
+                            const BorderSide(color: AppColors.hairline),
+                        shape: RoundedRectangleBorder(
+                            borderRadius:
+                                BorderRadius.circular(AppRadius.md)),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text('Receipts stay on this device only.',
+                  style: AppText.caption
+                      .copyWith(color: AppColors.inkTertiary)),
+            ],
+          ),
+        ),
+      ],
     );
   }
 

@@ -7,6 +7,7 @@ import 'package:shahid_finance/data/models.dart';
 import 'package:shahid_finance/data/store.dart';
 import 'package:shahid_finance/main.dart';
 import 'package:shahid_finance/screens/home.dart';
+import 'package:shahid_finance/services/auth_gate.dart';
 import 'package:shahid_finance/utils/format.dart';
 
 void main() {
@@ -23,7 +24,14 @@ void main() {
     await Store.seedWallets();
   });
   tearDownAll(() async {
-    await Hive.close();
+    // v1.1.4: Hive.close() never returns in this sandbox (same family
+    // of hang as the box-open note above) — time-box it so the suite
+    // exits after the tests themselves have passed.
+    try {
+      await Hive.close().timeout(const Duration(seconds: 10));
+    } catch (_) {
+      // Sandbox teardown quirk only; test results above stand.
+    }
     if (await testDir.exists()) await testDir.delete(recursive: true);
   });
 
@@ -58,7 +66,8 @@ void main() {
       (tester) async {
     // Seed invariants (wallets seeded in setUpAll — see note above):
     // categories seeded, Easypaisa is the seeded default.
-    expect(Store.uniqueCategoryCount, 12);
+    // v1.1.4: +Family +My Self → 14 unique names (Other is shared).
+    expect(Store.uniqueCategoryCount, 14);
     expect(Store.allWallets.length, 4);
     expect(Store.defaultWallet?.name, 'Easypaisa');
     expect(Store.totalBalance, 0);
@@ -129,5 +138,97 @@ void main() {
     expect(find.text('My Wallets'), findsOneWidget);
     expect(find.text('Swipe ›'), findsOneWidget);
     expect(find.text('Easypaisa'), findsWidgets);
+  });
+
+  test('v1.1.4: Family and My Self expense categories exist', () {
+    final names =
+        Store.categoriesFor('expense').map((c) => c.name).toSet();
+    expect(names.contains('Family'), isTrue);
+    expect(names.contains('My Self'), isTrue);
+    // Exact spellings, distinct icons.
+    final family =
+        Store.categoriesFor('expense').firstWhere((c) => c.name == 'Family');
+    final myself =
+        Store.categoriesFor('expense').firstWhere((c) => c.name == 'My Self');
+    expect(family.iconKey, isNot(myself.iconKey));
+    expect(family.kind, 'expense');
+    expect(myself.kind, 'expense');
+  });
+
+  test('v1.1.4: receipt field round-trips on a transaction', () async {
+    final w = Store.defaultWallet!;
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final txn = MoneyTxn(
+      id: newId(),
+      type: 'expense',
+      amount: 2500,
+      walletId: w.id,
+      categoryId: 'family',
+      dateMs: nowMs,
+      createdAtMs: nowMs,
+      receiptPath: 'receipt_test.jpg',
+    );
+    // JSON (snapshot) round-trip.
+    final restored = MoneyTxn.fromJson(txn.toJson());
+    expect(restored.receiptPath, 'receipt_test.jpg');
+    // Hive persistence round-trip.
+    await Store.saveTxn(txn);
+    expect(Store.txns.get(txn.id)?.receiptPath, 'receipt_test.jpg');
+    // Snapshot carries only the file name, never photo bytes.
+    final snapTxn = (Store.snapshot()['transactions'] as List)
+        .cast<Map<String, dynamic>>()
+        .firstWhere((j) => j['id'] == txn.id);
+    expect(snapTxn['receiptPath'], 'receipt_test.jpg');
+    await Store.deleteTxn(txn.id);
+  });
+
+  test('v1.1.4: balance auto-locks after the unlock window', () async {
+    final old = BalanceLock.autoLockDuration;
+    BalanceLock.autoLockDuration = const Duration(milliseconds: 120);
+    try {
+      expect(BalanceLock.unlocked.value, isFalse);
+      BalanceLock.unlockFor30s();
+      expect(BalanceLock.unlocked.value, isTrue);
+      await Future.delayed(const Duration(milliseconds: 250));
+      expect(BalanceLock.unlocked.value, isFalse);
+      // Re-unlock restarts the timer rather than stacking one.
+      BalanceLock.unlockFor30s();
+      BalanceLock.unlockFor30s();
+      expect(BalanceLock.unlocked.value, isTrue);
+      await Future.delayed(const Duration(milliseconds: 250));
+      expect(BalanceLock.unlocked.value, isFalse);
+    } finally {
+      BalanceLock.autoLockDuration = old;
+      BalanceLock.lock();
+    }
+  });
+
+  testWidgets('v1.1.4: Home shows Today / Yesterday / This week',
+      (tester) async {
+    final w = Store.defaultWallet!;
+    final now = DateTime.now();
+    final nowMs = now.millisecondsSinceEpoch;
+    final todayTxn = MoneyTxn(
+      id: newId(),
+      type: 'expense',
+      amount: 700,
+      walletId: w.id,
+      categoryId: 'myself',
+      note: 'Today note',
+      dateMs: nowMs,
+      createdAtMs: nowMs,
+    );
+    await Store.saveTxn(todayTxn);
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: HomeScreen(onSeeAllTransactions: () {}),
+      ),
+    ));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('Today'), findsOneWidget);
+    expect(find.text('Yesterday'), findsOneWidget);
+    expect(find.text('This week'), findsOneWidget);
+    expect(find.text('Today note'), findsWidgets);
+    await Store.deleteTxn(todayTxn.id);
   });
 }

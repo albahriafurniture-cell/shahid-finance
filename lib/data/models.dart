@@ -105,6 +105,11 @@ class MoneyTxn {
   String note;
   int dateMs; // when the transaction happened
   int createdAtMs;
+  /// v1.1.4: optional expense receipt — LOCAL file name only (see
+  /// services/receipt_service.dart). The photo itself lives in app
+  /// storage, never in Hive or the cloud snapshot, so a receipt can
+  /// never break backup/restore. '' = no receipt.
+  String receiptPath;
 
   MoneyTxn({
     required this.id,
@@ -116,6 +121,7 @@ class MoneyTxn {
     this.note = '',
     required this.dateMs,
     required this.createdAtMs,
+    this.receiptPath = '',
   });
 
   DateTime get date => DateTime.fromMillisecondsSinceEpoch(dateMs);
@@ -146,6 +152,7 @@ class MoneyTxn {
         'note': note,
         'dateMs': dateMs,
         'createdAtMs': createdAtMs,
+        'receiptPath': receiptPath,
       };
 
   factory MoneyTxn.fromJson(Map<String, dynamic> j) => MoneyTxn(
@@ -158,6 +165,7 @@ class MoneyTxn {
         note: (j['note'] as String?) ?? '',
         dateMs: (j['dateMs'] as num).toInt(),
         createdAtMs: (j['createdAtMs'] as num?)?.toInt() ?? 0,
+        receiptPath: (j['receiptPath'] as String?) ?? '',
       );
 }
 
@@ -167,16 +175,35 @@ class MoneyTxnAdapter extends TypeAdapter<MoneyTxn> {
 
   @override
   MoneyTxn read(BinaryReader reader) {
+    final id = reader.readString();
+    final type = reader.readString();
+    final amount = reader.readInt();
+    final walletId = reader.readString();
+    final toWalletId = reader.readString();
+    final categoryId = reader.readString();
+    final note = reader.readString();
+    final dateMs = reader.readInt();
+    final createdAtMs = reader.readInt();
+    // v1.1.4 field, appended last: pre-v1.1.4 records were written
+    // without it, so a missing trailing string must read as '' rather
+    // than failing the whole box on upgrade.
+    String receiptPath = '';
+    try {
+      receiptPath = reader.readString();
+    } catch (_) {
+      receiptPath = '';
+    }
     return MoneyTxn(
-      id: reader.readString(),
-      type: reader.readString(),
-      amount: reader.readInt(),
-      walletId: reader.readString(),
-      toWalletId: reader.readString(),
-      categoryId: reader.readString(),
-      note: reader.readString(),
-      dateMs: reader.readInt(),
-      createdAtMs: reader.readInt(),
+      id: id,
+      type: type,
+      amount: amount,
+      walletId: walletId,
+      toWalletId: toWalletId,
+      categoryId: categoryId,
+      note: note,
+      dateMs: dateMs,
+      createdAtMs: createdAtMs,
+      receiptPath: receiptPath,
     );
   }
 
@@ -191,6 +218,7 @@ class MoneyTxnAdapter extends TypeAdapter<MoneyTxn> {
     writer.writeString(obj.note);
     writer.writeInt(obj.dateMs);
     writer.writeInt(obj.createdAtMs);
+    writer.writeString(obj.receiptPath);
   }
 }
 

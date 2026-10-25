@@ -5,6 +5,7 @@ import '../data/models.dart';
 import '../data/store.dart';
 import '../theme.dart';
 import '../utils/format.dart';
+import '../widgets/balance_privacy.dart';
 import '../widgets/common.dart';
 import '../widgets/wallet_logo.dart';
 import '../widgets/transfer_sheet.dart';
@@ -61,12 +62,14 @@ class WalletsScreen extends StatelessWidget {
                         ],
                       ),
                       const SizedBox(height: 6),
-                      AmountText(
+                      // v1.1.4: masked by default, 30s unlock (see home).
+                      MaskedAmount(
                         value: Store.totalBalance,
                         style: AppText.displayBalance
                             .copyWith(color: Colors.white),
-                        neutral: true,
                       ),
+                      const SizedBox(height: 8),
+                      const UnlockBalanceButton(),
                       const SizedBox(height: 4),
                       Text(
                         'Across ${wallets.length} wallet${wallets.length == 1 ? '' : 's'}',
@@ -236,7 +239,7 @@ class WalletsScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.end,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                AmountText(
+                MaskedAmount(
                   value: balance,
                   style: AppText.amountRow.copyWith(
                     color: balance < 0
@@ -245,7 +248,6 @@ class WalletsScreen extends StatelessWidget {
                             ? AppColors.inkTertiary
                             : AppColors.ink),
                   ),
-                  neutral: true,
                 ),
                 const SizedBox(height: 2),
                 Text(
@@ -536,10 +538,9 @@ class WalletDetailScreen extends StatelessWidget {
                           style: AppText.micro
                               .copyWith(color: AppColors.inkTertiary)),
                       const SizedBox(height: 4),
-                      AmountText(
+                      MaskedAmount(
                         value: balance,
                         style: AppText.displayBalanceLite,
-                        neutral: true,
                       ),
                       const SizedBox(height: 12),
                       // v1.1.3: opening balance is editable here and is

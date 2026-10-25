@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../data/store.dart';
+import '../services/auth_gate.dart';
 import '../services/backup_service.dart';
 import '../services/pin_service.dart';
 import '../theme.dart';
@@ -172,8 +173,15 @@ class SettingsScreen extends StatelessWidget {
                   _navRow(
                     icon: Icons.file_upload_outlined,
                     label: 'Import CSV',
-                    onTap: () => appSnack(context,
-                        'CSV import is coming in v1.1 — your data stays safe until then'),
+                    onTap: () async {
+                      // v1.1.4: import is gated like export, even
+                      // though the flow itself is still coming.
+                      if (!await AuthGate.require(context)) return;
+                      if (context.mounted) {
+                        appSnack(context,
+                            'CSV import is coming in v1.1 — your data stays safe until then');
+                      }
+                    },
                   ),
                 ]),
                 const SizedBox(height: 24),
@@ -220,7 +228,7 @@ class SettingsScreen extends StatelessWidget {
                 // Footer (exact, per task brief)
                 Column(
                   children: [
-                    Text('Shahid Finance · Version 1.1.2',
+                    Text('Shahid Finance · Version 1.1.4',
                         style: AppText.caption
                             .copyWith(color: AppColors.inkTertiary)),
                     const SizedBox(height: 4),
@@ -427,17 +435,24 @@ class SettingsScreen extends StatelessWidget {
             _navRow(
               icon: Icons.logout,
               label: 'Sign out',
-              onTap: () async {
-                await BackupService.signOut();
-                Store.bump();
-              },
+              onTap: () => _signOut(context),
             ),
           ]),
       ],
     );
   }
 
+  // v1.1.4: every sensitive action below first requires fingerprint
+  // (PIN fallback); a failed/cancelled check aborts with no change.
+  Future<void> _signOut(BuildContext context) async {
+    if (!await AuthGate.require(context)) return;
+    await BackupService.signOut();
+    Store.bump();
+  }
+
   Future<void> _backupNow(BuildContext context) async {
+    if (!await AuthGate.require(context)) return;
+    if (!context.mounted) return;
     appSnack(context, 'Backing up…');
     try {
       await BackupService.backupNow();
@@ -449,6 +464,8 @@ class SettingsScreen extends StatelessWidget {
   }
 
   Future<void> _restore(BuildContext context) async {
+    if (!await AuthGate.require(context)) return;
+    if (!context.mounted) return;
     final ok = await showConfirmDialog(
       context: context,
       title: 'Restore from backup?',
@@ -777,6 +794,7 @@ class SettingsScreen extends StatelessWidget {
   }
 
   Future<void> _exportCsv(BuildContext context) async {
+    if (!await AuthGate.require(context)) return;
     try {
       final dir = await getTemporaryDirectory();
       final file = File('${dir.path}/shahid-finance-export.csv');
@@ -791,6 +809,8 @@ class SettingsScreen extends StatelessWidget {
   }
 
   Future<void> _logout(BuildContext context) async {
+    if (!await AuthGate.require(context)) return;
+    if (!context.mounted) return;
     final ok = await showConfirmDialog(
       context: context,
       title: 'Log out of Shahid Finance?',
@@ -805,6 +825,8 @@ class SettingsScreen extends StatelessWidget {
   }
 
   Future<void> _deleteAccount(BuildContext context) async {
+    if (!await AuthGate.require(context)) return;
+    if (!context.mounted) return;
     final ok = await showConfirmDialog(
       context: context,
       title: 'Delete your account and all data?',

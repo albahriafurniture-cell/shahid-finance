@@ -1,7 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../data/models.dart';
 import '../data/store.dart';
+import '../services/receipt_service.dart';
 import '../theme.dart';
 import '../utils/format.dart';
 import '../widgets/common.dart';
@@ -918,6 +921,50 @@ Future<void> showTxnDetailSheet(BuildContext context, MoneyTxn t) async {
         _detailField('Date', '${fmtDate(t.date)} · ${fmtTime(t.date)}'),
         if (cat != null) _detailField('Category', cat.name),
         _detailField('Note', t.note.isEmpty ? '—' : t.note),
+        // v1.1.4: receipt thumbnail; tap opens the full photo.
+        if (t.receiptPath.isNotEmpty)
+          FutureBuilder<File?>(
+            future: ReceiptService.fileFor(t.receiptPath),
+            builder: (ctx, snap) {
+              final file = snap.data;
+              if (snap.connectionState == ConnectionState.waiting) {
+                return const SizedBox(
+                    height: 52,
+                    child: Center(
+                        child: SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2))));
+              }
+              if (file == null) {
+                return _detailField('Receipt', 'Not on this device');
+              }
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: GestureDetector(
+                  onTap: () => showDialog<void>(
+                    context: ctx,
+                    builder: (_) => Dialog(
+                      backgroundColor: Colors.black,
+                      insetPadding: const EdgeInsets.all(16),
+                      child: InteractiveViewer(
+                        child: Image.file(file, fit: BoxFit.contain),
+                      ),
+                    ),
+                  ),
+                  child: ClipRRect(
+                    borderRadius:
+                        BorderRadius.circular(AppRadius.md),
+                    child: Image.file(file,
+                        height: 180,
+                        width: double.infinity,
+                        fit: BoxFit.cover),
+                  ),
+                ),
+              );
+            },
+          ),
         if (running != null)
           _detailField(
               'Balance after', Store.hideAmounts ? '••••••' : fmtRs(running)),

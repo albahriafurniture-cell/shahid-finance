@@ -4,6 +4,11 @@
     <!-- Biometric unlock via local_auth. -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
     <uses-permission android:name="android.permission.USE_FINGERPRINT"/>
+    <!-- v1.1.4 expense receipts: camera photo + gallery upload
+         (image_picker; gallery uses the system photo picker on
+         Android 13+, READ_MEDIA_IMAGES covers older versions). -->
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
     <application
         android:label="Shahid Finance"
         android:name="${applicationName}"

@@ -55,6 +55,9 @@ class _PinLockScreenState extends State<PinLockScreen>
     _shake = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 300));
     if (_locked) _startLockoutTicker();
+    // Launch gate only: verify mode (used as PIN fallback by AuthGate)
+    // never auto-tries biometrics — AuthGate already tried them — so
+    // the user is not prompted twice.
     if (widget.mode == PinMode.enter && Store.biometricEnabled) {
       BiometricService.isAvailable().then((ok) {
         if (mounted) {
@@ -347,30 +350,39 @@ class _PinLockScreenState extends State<PinLockScreen>
     );
   }
 
+  // v1.1.4: prominent, high-contrast keypad — large white digits on
+  // dark glass keys with a bright neon-blue ring, large neon dots.
+  // Visual change only; PIN logic is untouched.
   Widget _dots(bool locked) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         for (var i = 0; i < 4; i++) ...[
-          if (i > 0) const SizedBox(width: 18),
+          if (i > 0) const SizedBox(width: 20),
           Container(
-            width: 16,
-            height: 16,
+            width: 20,
+            height: 20,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: _errorFlash
                   ? AppColors.expense
                   : (i < _entered.length || _successFlash)
-                      ? AppColors.brand
-                      : Colors.white,
+                      ? AppColors.accent
+                      : const Color(0xFF241B3D),
               border: Border.all(
-                color: locked
+                color: locked || _errorFlash
                     ? AppColors.expense
-                    : (_errorFlash
-                        ? AppColors.expense
-                        : AppColors.hairline),
-                width: 1.5,
+                    : AppColors.accent,
+                width: 2,
               ),
+              boxShadow: (i < _entered.length || _successFlash)
+                  ? [
+                      const BoxShadow(
+                          color: Color(0x6600D4FF),
+                          blurRadius: 12,
+                          offset: Offset(0, 0))
+                    ]
+                  : null,
             ),
           ),
         ],
@@ -380,18 +392,27 @@ class _PinLockScreenState extends State<PinLockScreen>
 
   Widget _keypad(bool locked) {
     Widget key(Widget child, VoidCallback? onTap) {
-      return GestureDetector(
-        onTap: onTap,
-        child: Container(
-          width: 72,
-          height: 72,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            shape: BoxShape.circle,
-            boxShadow: AppShadows.card,
+      return Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          customBorder: const CircleBorder(),
+          splashColor: AppColors.accent.withValues(alpha: 0.25),
+          highlightColor: AppColors.accent.withValues(alpha: 0.15),
+          child: Container(
+            width: 80,
+            height: 80,
+            decoration: BoxDecoration(
+              color: const Color(0xFF241B3D),
+              shape: BoxShape.circle,
+              border: Border.all(
+                  color: AppColors.accent.withValues(alpha: 0.55),
+                  width: 1.5),
+              boxShadow: AppShadows.card,
+            ),
+            alignment: Alignment.center,
+            child: child,
           ),
-          alignment: Alignment.center,
-          child: child,
         ),
       );
     }
@@ -403,17 +424,17 @@ class _PinLockScreenState extends State<PinLockScreen>
           children: [
             Text(d,
                 style: AppText.h1.copyWith(
-                  fontSize: 24,
-                  fontWeight: FontWeight.w600,
-                  color: locked ? AppColors.inkTertiary : AppColors.ink,
+                  fontSize: 28,
+                  fontWeight: FontWeight.w800,
+                  color: locked ? AppColors.inkTertiary : Colors.white,
                 )),
             if (letters.isNotEmpty)
               Text(letters,
                   style: AppText.caption.copyWith(
-                    fontSize: 9,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 1,
-                    color: AppColors.inkTertiary,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.5,
+                    color: AppColors.accent,
                   )),
           ],
         ),
@@ -452,18 +473,18 @@ class _PinLockScreenState extends State<PinLockScreen>
             if (showBiometric)
               key(
                 const Icon(Icons.fingerprint,
-                    size: 28, color: AppColors.brandDeep),
+                    size: 32, color: AppColors.accent),
                 locked ? null : _tryBiometric,
               )
             else
-              const SizedBox(width: 72, height: 72),
+              const SizedBox(width: 80, height: 80),
             const SizedBox(width: 16),
             digit('0', ''),
             const SizedBox(width: 16),
             key(
               Icon(Icons.backspace_outlined,
-                  size: 26,
-                  color: locked ? AppColors.inkTertiary : AppColors.ink),
+                  size: 28,
+                  color: locked ? AppColors.inkTertiary : Colors.white),
               locked ? null : _onBackspace,
             ),
           ],

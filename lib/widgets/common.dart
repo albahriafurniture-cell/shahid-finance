@@ -383,6 +383,8 @@ class TxnRow extends StatelessWidget {
           : fmtSigned(txn.amount, income: txn.isIncome),
       amountColor: txn.isIncome ? AppColors.brand : AppColors.expense,
       runningBalance: showRunningBalance ? runningBalance : null,
+      // v1.1.4: receipt badge on the row when one is attached.
+      hasReceipt: txn.receiptPath.isNotEmpty,
       onTap: onTap,
     );
   }
@@ -394,6 +396,7 @@ class TxnRow extends StatelessWidget {
     required String amountText,
     required Color amountColor,
     int? runningBalance,
+    bool hasReceipt = false,
     VoidCallback? onTap,
   }) {
     final hidden = Store.hideAmounts;
@@ -429,8 +432,19 @@ class TxnRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.end,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text(amountText,
-                    style: AppText.amountRow.copyWith(color: amountColor)),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (hasReceipt) ...[
+                      const Icon(Icons.receipt_outlined,
+                          size: 14, color: AppColors.accent),
+                      const SizedBox(width: 4),
+                    ],
+                    Text(amountText,
+                        style:
+                            AppText.amountRow.copyWith(color: amountColor)),
+                  ],
+                ),
                 if (runningBalance != null) ...[
                   const SizedBox(height: 2),
                   Text(

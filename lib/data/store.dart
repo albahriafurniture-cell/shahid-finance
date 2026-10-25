@@ -127,6 +127,15 @@ class Store {
         await categories.put(c.id, c);
       }
     }
+    // v1.1.4 migration: "Family" and "My Self" (user's exact spellings)
+    // must appear for EXISTING users too, not only fresh installs.
+    for (final c in [
+      _cat('family', 'Family', 'expense', 'group', 0xFFE56AA0, 0xFFFCE9F2, 9),
+      _cat('myself', 'My Self', 'expense', 'person', 0xFF00D4FF, 0xFFE0F7FF,
+          10),
+    ]) {
+      if (!categories.containsKey(c.id)) await categories.put(c.id, c);
+    }
     // First-run defaults for scalar settings.
     final defaults = <String, Object>{
       'cycleStartDay': 1,

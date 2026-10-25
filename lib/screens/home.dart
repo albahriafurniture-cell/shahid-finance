@@ -4,6 +4,7 @@ import '../data/models.dart';
 import '../data/store.dart';
 import '../theme.dart';
 import '../utils/format.dart';
+import '../widgets/balance_privacy.dart';
 import '../widgets/common.dart';
 import '../widgets/transfer_sheet.dart';
 import '../widgets/wallet_logo.dart';
@@ -122,12 +123,15 @@ class HomeScreen extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 6),
-                  AmountText(
+                  // v1.1.4: total balance is masked by default; unlock
+                  // (fingerprint / PIN) shows it for 30 seconds only.
+                  MaskedAmount(
                     value: Store.totalBalance,
                     style: AppText.displayBalance
                         .copyWith(color: Colors.white, fontSize: 44),
-                    neutral: true,
                   ),
+                  const SizedBox(height: 8),
+                  const UnlockBalanceButton(),
                   const SizedBox(height: 8),
                   _balancePill(income, expense, prevIncome, prevExpense),
                   const SizedBox(height: 4),
@@ -313,9 +317,96 @@ class HomeScreen extends StatelessWidget {
                     ),
                 ],
               ),
+            // v1.1.4: daily details on the front screen — Today,
+            // Yesterday, and the current week, each with its income /
+            // expense totals and entries (first 8; See all → History).
+            const SizedBox(height: 28),
+            _daySection(context, 'Today',
+                Store.allTxnsDesc.where((t) => _isSameDay(t.date, now))),
+            const SizedBox(height: 28),
+            _daySection(
+                context,
+                'Yesterday',
+                Store.allTxnsDesc.where(
+                    (t) => _isSameDay(t.date, now.subtract(const Duration(days: 1))))),
+            const SizedBox(height: 28),
+            _daySection(
+                context,
+                'This week',
+                Store.allTxnsDesc.where((t) =>
+                    !t.date.isBefore(_weekStart(now)) &&
+                    t.date.isBefore(
+                        _weekStart(now).add(const Duration(days: 7))))),
           ],
         );
       },
+    );
+  }
+
+  static bool _isSameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
+  /// Monday of the current week (local time).
+  static DateTime _weekStart(DateTime now) {
+    final d = DateTime(now.year, now.month, now.day);
+    return d.subtract(Duration(days: d.weekday - 1));
+  }
+
+  /// v1.1.4 daily section: period totals + entries (first 8).
+  Widget _daySection(
+      BuildContext context, String title, Iterable<MoneyTxn> txns) {
+    final list = txns.toList();
+    final income = Store.sumIn(list);
+    final expense = Store.sumOut(list);
+    final shown = list.take(8).toList();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(child: Text(title, style: AppText.h2)),
+            Text(
+              Store.hideAmounts
+                  ? 'In Rs •••••• · Out Rs ••••••'
+                  : 'In ${fmtRs(income)} · Out ${fmtRs(expense)}',
+              style:
+                  AppText.caption.copyWith(color: AppColors.inkSecondary),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        if (list.isEmpty)
+          Container(
+            decoration: cardDecoration(),
+            padding: const EdgeInsets.all(16),
+            child: Text('No entries',
+                style:
+                    AppText.label.copyWith(color: AppColors.inkSecondary)),
+          )
+        else
+          GroupCard(
+            children: [
+              for (final t in shown)
+                TxnRow(
+                  txn: t,
+                  onTap: () => showTxnDetailSheet(context, t),
+                ),
+              if (list.length > shown.length)
+                GestureDetector(
+                  onTap: onSeeAllTransactions,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Center(
+                      child: Text(
+                          'See all ${list.length} entries ›',
+                          style: AppText.label
+                              .copyWith(color: AppColors.accent)),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+      ],
     );
   }
 
@@ -559,10 +650,9 @@ class _WalletCarouselState extends State<_WalletCarousel> {
                             style: AppText.micro.copyWith(
                                 color: AppColors.inkTertiary)),
                         const SizedBox(height: 2),
-                        AmountText(
+                        MaskedAmount(
                           value: balance,
                           style: AppText.amountRow,
-                          neutral: true,
                         ),
                         const SizedBox(height: 2),
                         Text(w.caption,

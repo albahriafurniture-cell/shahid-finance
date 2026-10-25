@@ -12,6 +12,8 @@ const Map<String, IconData> kIconRegistry = {
   'medical_services': Icons.medical_services,
   'movie': Icons.movie,
   'school': Icons.school,
+  'group': Icons.group,
+  'person': Icons.person,
   'payments': Icons.payments,
   'storefront': Icons.storefront,
   'laptop_mac': Icons.laptop_mac,

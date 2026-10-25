@@ -119,13 +119,28 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         onTap: () => setState(() => _setup = false),
                       ),
                     if (!_setup)
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: Image.asset(
-                          'assets/images/app_icon.png',
-                          width: 40,
-                          height: 40,
-                          fit: BoxFit.cover,
+                      // v1.1.4: larger app-icon medallion with a soft
+                      // neon glow — the welcome screen's anchor.
+                      Container(
+                        width: 56,
+                        height: 56,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(18),
+                          boxShadow: const [
+                            BoxShadow(
+                                color: Color(0x6600D4FF),
+                                blurRadius: 24,
+                                offset: Offset(0, 6)),
+                          ],
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(18),
+                          child: Image.asset(
+                            'assets/images/app_icon.png',
+                            width: 56,
+                            height: 56,
+                            fit: BoxFit.cover,
+                          ),
                         ),
                       ),
                     const Spacer(),
@@ -213,17 +228,25 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           child: SingleChildScrollView(
             child: Column(
             children: [
-              const SizedBox(height: 24),
+              const SizedBox(height: 32),
               _illustrationStage(i),
-              const SizedBox(height: 24),
-              Text(_slides[i].$1,
-                  style: AppText.headline, textAlign: TextAlign.center),
+              const SizedBox(height: 32),
+              Text('SHAHID FINANCE',
+                  style: AppText.micro.copyWith(
+                      fontSize: 12,
+                      letterSpacing: 2.5,
+                      color: AppColors.accent)),
               const SizedBox(height: 12),
+              Text(_slides[i].$1,
+                  style: AppText.headline.copyWith(fontSize: 28),
+                  textAlign: TextAlign.center),
+              const SizedBox(height: 14),
               ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 300),
                 child: Text(_slides[i].$2,
-                    style:
-                        AppText.body.copyWith(color: AppColors.inkSecondary),
+                    style: AppText.body.copyWith(
+                        fontSize: 16,
+                        color: AppColors.inkSecondary),
                     textAlign: TextAlign.center),
               ),
             ],
@@ -234,20 +257,20 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     );
   }
 
+  // v1.1.4: dark liquid-glass stage (was a flat light tint) with a
+  // thin neon hairline — matches the in-app glass language.
   Widget _illustrationStage(int i) {
     return Container(
-      width: 300,
-      height: 240,
-      decoration: const BoxDecoration(
-        color: AppColors.accentTint,
-        borderRadius: BorderRadius.only(
-          topLeft: Radius.circular(36),
-          topRight: Radius.circular(28),
-          bottomLeft: Radius.circular(28),
-          bottomRight: Radius.circular(36),
-        ),
+      width: 320,
+      height: 260,
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(32),
+        border: Border.all(
+            color: AppColors.accent.withValues(alpha: 0.35), width: 1),
+        boxShadow: AppShadows.hero,
       ),
-      child: Center(child: [ _walletArt(), _chartArt(), _shieldArt() ][i]),
+      child: Center(child: [_walletArt(), _chartArt(), _shieldArt()][i]),
     );
   }
 
@@ -426,9 +449,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SizedBox(height: 24),
-          Text('Make it yours', style: AppText.headline),
-          const SizedBox(height: 8),
+          const SizedBox(height: 32),
+          Text('Make it yours',
+              style: AppText.headline.copyWith(fontSize: 28)),
+          const SizedBox(height: 10),
           Text(
             'Add your name and confirm your currency. You can change both later in Settings.',
             style: AppText.body.copyWith(color: AppColors.inkSecondary),
