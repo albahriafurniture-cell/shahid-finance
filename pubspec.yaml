@@ -34,6 +34,8 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/images/app_icon.png
   # Plus Jakarta Sans is bundled as an asset (offline reliability, master
   # spec §2.3). google_fonts resolves these exact weights from the bundle;
   # runtime fetching is disabled in main.dart.

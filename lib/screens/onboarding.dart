@@ -115,6 +115,16 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         icon: Icons.arrow_back_ios_new,
                         onTap: () => setState(() => _setup = false),
                       ),
+                    if (!_setup)
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Image.asset(
+                          'assets/images/app_icon.png',
+                          width: 40,
+                          height: 40,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
                     const Spacer(),
                     if (!_setup)
                       GhostButton(label: 'Skip', onTap: _toSignIn),

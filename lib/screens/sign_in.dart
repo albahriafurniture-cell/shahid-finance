@@ -86,18 +86,14 @@ class _SignInScreenState extends State<SignInScreen> {
             children: [
               const SizedBox(height: 32),
               Center(
-                child: Container(
-                  width: 64,
-                  height: 64,
-                  decoration: BoxDecoration(
-                    gradient: AppColors.heroGradient,
-                    borderRadius: BorderRadius.circular(18),
-                    boxShadow: AppShadows.hero,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(18),
+                  child: Image.asset(
+                    'assets/images/app_icon.png',
+                    width: 64,
+                    height: 64,
+                    fit: BoxFit.cover,
                   ),
-                  alignment: Alignment.center,
-                  child: Text('Rs',
-                      style: AppText.h1.copyWith(
-                          color: Colors.white, fontWeight: FontWeight.w800)),
                 ),
               ),
               const SizedBox(height: 16),

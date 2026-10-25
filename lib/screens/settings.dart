@@ -255,22 +255,18 @@ class SettingsScreen extends StatelessWidget {
 
   Widget _profileCard(BuildContext context) {
     final name = Store.userName;
-    final initial = name.isEmpty ? 'S' : name[0].toUpperCase();
     return Container(
       decoration: cardDecoration(),
       padding: const EdgeInsets.all(16),
       child: Row(
         children: [
-          Container(
-            width: 52,
-            height: 52,
-            decoration: const BoxDecoration(
-              gradient: AppColors.heroGradient,
-              shape: BoxShape.circle,
+          ClipOval(
+            child: Image.asset(
+              'assets/images/app_icon.png',
+              width: 52,
+              height: 52,
+              fit: BoxFit.cover,
             ),
-            alignment: Alignment.center,
-            child:
-                Text(initial, style: AppText.h1.copyWith(color: Colors.white)),
           ),
           const SizedBox(width: 12),
           Expanded(
