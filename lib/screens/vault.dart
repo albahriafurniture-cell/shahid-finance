@@ -6,7 +6,9 @@ import '../services/auth_gate.dart';
 import '../services/vault_service.dart';
 import '../theme.dart';
 import '../utils/password_tools.dart';
+import '../utils/site_catalog.dart';
 import '../widgets/common.dart';
+import '../widgets/site_icon.dart';
 
 /// v1.1.7: Password Manager as a dock tab (back by explicit user
 /// order, superseding the v1.1.2 removal). Encrypted local vault:
@@ -27,6 +29,8 @@ class _VaultScreenState extends State<VaultScreen> {
   String _query = '';
   String _category = 'All';
   bool _favouritesOnly = false;
+  bool _grouped = false;
+  final Set<String> _expandedGroups = {};
   final Set<String> _visible = {};
 
   @override
@@ -142,6 +146,8 @@ class _VaultScreenState extends State<VaultScreen> {
                         _searchField(),
                         const SizedBox(height: 12),
                         _categoryChips(),
+                        const SizedBox(height: 12),
+                        _viewToggle(),
                         const SizedBox(height: 16),
                         if (entries.isEmpty)
                           Container(
@@ -161,6 +167,11 @@ class _VaultScreenState extends State<VaultScreen> {
                                   : null,
                             ),
                           )
+                        else if (_grouped)
+                          for (final g in groupEntries(entries)) ...[
+                            _groupCard(g),
+                            const SizedBox(height: 12),
+                          ]
                         else
                           GroupCard(
                             children: [
@@ -268,21 +279,112 @@ class _VaultScreenState extends State<VaultScreen> {
     );
   }
 
-  IconData _categoryIcon(String category) {
-    switch (category) {
-      case 'Bank':
-        return Icons.account_balance_outlined;
-      case 'Card':
-        return Icons.credit_card_outlined;
-      case 'Social':
-        return Icons.people_outline;
-      case 'Work':
-        return Icons.work_outline;
-      case 'Other':
-        return Icons.folder_outlined;
-      default:
-        return Icons.key_outlined;
+  /// All / By app toggle. Grouped view is the point of v1.1.8:
+  /// one site, many accounts, each with its own username/password.
+  Widget _viewToggle() {
+    Widget seg(String label, bool selected, VoidCallback onTap) {
+      return Expanded(
+        child: GestureDetector(
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            decoration: BoxDecoration(
+              color: selected ? AppColors.accent : Colors.transparent,
+              borderRadius: BorderRadius.circular(AppRadius.pill),
+            ),
+            child: Text(
+              label,
+              textAlign: TextAlign.center,
+              style: AppText.label.copyWith(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: selected ? Colors.white : AppColors.inkSecondary,
+              ),
+            ),
+          ),
+        ),
+      );
     }
+
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceInset,
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+        border: Border.all(color: AppColors.hairline),
+      ),
+      child: Row(
+        children: [
+          seg('All', !_grouped, () => setState(() => _grouped = false)),
+          seg('By app / site', _grouped,
+              () => setState(() => _grouped = true)),
+        ],
+      ),
+    );
+  }
+
+  Widget _groupCard(SiteGroup g) {
+    final expanded = _expandedGroups.contains(g.site.key);
+    return Container(
+      decoration: cardDecoration(),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Column(
+        children: [
+          InkWell(
+            onTap: () => setState(() {
+              if (expanded) {
+                _expandedGroups.remove(g.site.key);
+              } else {
+                _expandedGroups.add(g.site.key);
+              }
+            }),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Row(
+                children: [
+                  SiteIcon(site: g.site),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(g.site.name, style: AppText.title),
+                        const SizedBox(height: 2),
+                        Text(
+                          '${g.entries.length} account${g.entries.length == 1 ? '' : 's'}',
+                          style: AppText.caption.copyWith(
+                              color: AppColors.inkTertiary),
+                        ),
+                      ],
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => _openForm(context,
+                        prefillSite: g.site),
+                    child: Text('+ Add account',
+                        style: AppText.label.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.brand)),
+                  ),
+                  Icon(
+                    expanded
+                        ? Icons.keyboard_arrow_up
+                        : Icons.keyboard_arrow_down,
+                    color: AppColors.inkSecondary,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (expanded)
+            for (final e in g.entries) ...[
+              const Divider(
+                  height: 1, thickness: 1, color: AppColors.surfaceInset),
+              _entryRow(e),
+            ],
+        ],
+      ),
+    );
   }
 
   Widget _entryRow(VaultEntry e) {
@@ -295,17 +397,7 @@ class _VaultScreenState extends State<VaultScreen> {
         children: [
           Row(
             children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: AppColors.accentTint,
-                  borderRadius:
-                      BorderRadius.circular(AppRadius.sm),
-                ),
-                child: Icon(_categoryIcon(e.category),
-                    size: 22, color: AppColors.brand),
-              ),
+              SiteIcon(site: siteForEntry(e)),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -452,11 +544,12 @@ class _VaultScreenState extends State<VaultScreen> {
     );
   }
 
-  void _openForm(BuildContext context, {VaultEntry? existing}) {
+  void _openForm(BuildContext context,
+      {VaultEntry? existing, SiteInfo? prefillSite}) {
     showAppSheet<void>(
       context: context,
       title: existing == null ? 'Add Password' : 'Edit Password',
-      child: _VaultForm(existing: existing),
+      child: _VaultForm(existing: existing, prefillSite: prefillSite),
     );
   }
 }
@@ -464,7 +557,8 @@ class _VaultScreenState extends State<VaultScreen> {
 /// Add / edit form with generator + strength meter.
 class _VaultForm extends StatefulWidget {
   final VaultEntry? existing;
-  const _VaultForm({this.existing});
+  final SiteInfo? prefillSite;
+  const _VaultForm({this.existing, this.prefillSite});
 
   @override
   State<_VaultForm> createState() => _VaultFormState();
@@ -478,19 +572,28 @@ class _VaultFormState extends State<_VaultForm> {
   late final TextEditingController _noteCtrl;
   late String _category;
   late bool _favourite;
+  late bool _customSite;
   bool _showPassword = false;
 
   @override
   void initState() {
     super.initState();
     final ex = widget.existing;
+    final pre = widget.prefillSite;
     _titleCtrl = TextEditingController(text: ex?.title ?? '');
     _userCtrl = TextEditingController(text: ex?.username ?? '');
     _passCtrl = TextEditingController(text: ex?.password ?? '');
-    _siteCtrl = TextEditingController(text: ex?.website ?? '');
+    _siteCtrl =
+        TextEditingController(text: ex?.website ?? pre?.canonical ?? '');
     _noteCtrl = TextEditingController(text: ex?.note ?? '');
-    _category = ex?.category ?? 'Login';
+    _category = ex?.category ??
+        (pre != null && pre.social ? 'Social' : 'Login');
     _favourite = ex?.favourite ?? false;
+    // A legacy free-text site that matches no catalog entry keeps
+    // its custom text field visible when editing.
+    _customSite = ex != null &&
+        ex.website.isNotEmpty &&
+        resolveSite(ex.website) == null;
   }
 
   @override
@@ -734,7 +837,11 @@ class _VaultFormState extends State<_VaultForm> {
         ],
         const SizedBox(height: 16),
         _label('Website / App'),
-        _field(_siteCtrl, 'e.g. gmail.com'),
+        _sitePicker(),
+        if (_customSite) ...[
+          const SizedBox(height: 12),
+          _field(_siteCtrl, 'e.g. mybank.com'),
+        ],
         const SizedBox(height: 16),
         _label('Category'),
         Wrap(
@@ -801,6 +908,179 @@ class _VaultFormState extends State<_VaultForm> {
         ],
       ],
     );
+  }
+
+  /// Site picker button: shows the resolved brand tile + name,
+  /// or the custom text when the site is not in the catalog.
+  Widget _sitePicker() {
+    final text = _siteCtrl.text.trim();
+    final site = resolveSite(text);
+    final shown = site ?? (text.isEmpty ? null : fallbackSite(text));
+    return GestureDetector(
+      onTap: _pickSite,
+      child: Container(
+        padding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceInset,
+          borderRadius: BorderRadius.circular(AppRadius.md),
+        ),
+        child: Row(
+          children: [
+            if (shown != null) ...[
+              SiteIcon(site: shown, size: 36),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(shown.name,
+                    style: AppText.body,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
+              ),
+            ] else
+              Expanded(
+                child: Text('Choose app / site',
+                    style: AppText.body),
+              ),
+            const Icon(Icons.keyboard_arrow_down,
+                color: AppColors.inkSecondary),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Searchable catalog sheet + "Other / custom" free-text option.
+  /// Picking a site stores its canonical domain, so the tile and
+  /// the By-app grouping match reliably; nothing is overwritten —
+  /// every save creates its own entry id.
+  Future<void> _pickSite() async {
+    final searchCtrl = TextEditingController();
+    await showAppSheet<void>(
+      context: context,
+      title: 'Choose app / site',
+      child: StatefulBuilder(
+        builder: (ctx, setSheet) {
+          final q = searchCtrl.text.trim().toLowerCase();
+          final sites = q.isEmpty
+              ? siteCatalog
+              : siteCatalog
+                  .where((s) =>
+                      s.name.toLowerCase().contains(q) ||
+                      s.canonical.contains(q) ||
+                      s.matchKeys.any((k) => k.contains(q)))
+                  .toList();
+          Widget row(SiteInfo s) {
+            return InkWell(
+              onTap: () {
+                setState(() {
+                  _siteCtrl.text = s.canonical;
+                  _customSite = false;
+                  if (_category == 'Login' && s.social) {
+                    _category = 'Social';
+                  }
+                });
+                Navigator.of(ctx).pop();
+              },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: Row(
+                  children: [
+                    SiteIcon(site: s, size: 40),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment:
+                            CrossAxisAlignment.start,
+                        children: [
+                          Text(s.name, style: AppText.bodyStrong),
+                          Text(s.canonical,
+                              style: AppText.caption.copyWith(
+                                  color: AppColors.inkTertiary)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: searchCtrl,
+                decoration: InputDecoration(
+                  hintText: 'Search apps & sites…',
+                  hintStyle: AppText.body
+                      .copyWith(color: AppColors.inkTertiary),
+                  prefixIcon: const Icon(Icons.search,
+                      color: AppColors.inkTertiary),
+                  filled: true,
+                  fillColor: AppColors.surfaceInset,
+                  contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 16),
+                  border: OutlineInputBorder(
+                    borderRadius:
+                        BorderRadius.circular(AppRadius.md),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+                style: AppText.body,
+                onChanged: (_) => setSheet(() {}),
+              ),
+              const SizedBox(height: 8),
+              InkWell(
+                onTap: () {
+                  setState(() {
+                    _customSite = true;
+                    if (_siteCtrl.text.isNotEmpty &&
+                        resolveSite(_siteCtrl.text) != null) {
+                      _siteCtrl.text = '';
+                    }
+                  });
+                  Navigator.of(ctx).pop();
+                },
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 10),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceInset,
+                          borderRadius:
+                              BorderRadius.circular(AppRadius.sm),
+                        ),
+                        child: const Icon(Icons.add,
+                            color: AppColors.inkSecondary),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text('Other / custom site',
+                            style: AppText.bodyStrong),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              if (sites.isEmpty)
+                Padding(
+                  padding: EdgeInsets.symmetric(vertical: 16),
+                  child: Text('No match — use "Other / custom site".',
+                      style: AppText.body),
+                )
+              else
+                for (final s in sites) row(s),
+            ],
+          );
+        },
+      ),
+    );
+    searchCtrl.dispose();
   }
 
   Widget _label(String text) {

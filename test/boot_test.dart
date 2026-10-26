@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -8,10 +9,13 @@ import 'package:shahid_finance/data/store.dart';
 import 'package:shahid_finance/main.dart';
 import 'package:shahid_finance/screens/home.dart';
 import 'package:shahid_finance/services/auth_gate.dart';
+import 'package:shahid_finance/services/favicon_service.dart';
 import 'package:shahid_finance/services/vault_service.dart';
 import 'package:shahid_finance/utils/format.dart';
 import 'package:shahid_finance/utils/password_tools.dart';
+import 'package:shahid_finance/utils/site_catalog.dart';
 import 'package:shahid_finance/widgets/dock.dart';
+import 'package:shahid_finance/widgets/site_icon.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -851,5 +855,201 @@ void main() {
           currentOffset: 0,
         ),
         0);
+  });
+
+  test('v1.1.8: site catalog lookup incl. domain variants', () {
+    expect(resolveSite('facebook.com')?.key, 'facebook');
+    expect(resolveSite('FB')?.key, 'facebook');
+    expect(resolveSite('https://www.Facebook.com/profile')?.key, 'facebook');
+    expect(resolveSite('instagram.com')?.key, 'instagram');
+    expect(resolveSite('x.com')?.key, 'x');
+    expect(resolveSite('twitter')?.key, 'x');
+    expect(resolveSite('www.youtube.com')?.key, 'youtube');
+    expect(resolveSite('tiktok')?.key, 'tiktok');
+    expect(resolveSite('gmail.com')?.key, 'google');
+    expect(resolveSite('Google')?.key, 'google');
+    expect(resolveSite('meezanbank.com')?.key, 'meezan');
+    expect(resolveSite('Easypaisa')?.key, 'easypaisa');
+    expect(resolveSite('jazzcash.com.pk')?.key, 'jazzcash');
+    expect(resolveSite('some-random-bank-xyz.com'), isNull);
+    expect(resolveSite(''), isNull);
+    // Catalog tiles are original monograms, never copied artwork.
+    expect(siteCatalog.length, greaterThanOrEqualTo(23));
+    expect(siteCatalog.map((s) => s.key).toSet().length,
+        siteCatalog.length);
+  });
+
+  test('v1.1.8: legacy free-text entry resolves to the right tile',
+      () {
+    final legacy = VaultEntry(
+      id: 'legacy-fb',
+      title: 'Facebook',
+      username: 'shahid',
+      password: 'x',
+      website: 'Facebook',
+      updatedAtMs: 0,
+    );
+    expect(siteForEntry(legacy).key, 'facebook');
+    final domainLegacy = VaultEntry(
+      id: 'legacy-ig',
+      title: 'Insta',
+      username: 'shahid',
+      password: 'x',
+      website: 'www.instagram.com',
+      updatedAtMs: 0,
+    );
+    expect(siteForEntry(domainLegacy).key, 'instagram');
+    // Unknown site falls back to a neutral first-letter tile.
+    final unknown = VaultEntry(
+      id: 'legacy-unknown',
+      title: 'MyBank',
+      username: 'shahid',
+      password: 'x',
+      website: 'mybank.example',
+      updatedAtMs: 0,
+    );
+    final fb = siteForEntry(unknown);
+    expect(fb.key, startsWith('custom:'));
+    expect(fb.monogram, 'M');
+  });
+
+  test('v1.1.8: grouping + multiple accounts per site coexist',
+      () async {
+    final box = await Hive.openBox('vault_group_test_box');
+    VaultService.useBoxForTest(box);
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    // Two Facebook accounts + one Instagram account.
+    await VaultService.save(VaultEntry(
+      id: newId(),
+      title: 'Facebook personal',
+      username: 'shahid.personal',
+      password: 'pw1',
+      website: 'facebook.com',
+      category: 'Social',
+      updatedAtMs: nowMs,
+    ));
+    await VaultService.save(VaultEntry(
+      id: newId(),
+      title: 'Facebook page',
+      username: 'shahid.page',
+      password: 'pw2',
+      website: 'facebook.com',
+      category: 'Social',
+      updatedAtMs: nowMs,
+    ));
+    await VaultService.save(VaultEntry(
+      id: newId(),
+      title: 'Instagram',
+      username: 'shahid.ig',
+      password: 'pw3',
+      website: 'instagram.com',
+      category: 'Social',
+      updatedAtMs: nowMs,
+    ));
+    final all = VaultService.entries;
+    expect(all.length, 3);
+    final groups = groupEntries(all);
+    expect(groups.length, 2);
+    final fbGroup =
+        groups.firstWhere((g) => g.site.key == 'facebook');
+    expect(fbGroup.entries.length, 2);
+    expect(
+        fbGroup.entries.map((e) => e.username).toSet(),
+        {'shahid.personal', 'shahid.page'});
+    // "Add another account" pre-fill: a new entry stamped with the
+    // group's canonical domain lands in the same group, and the
+    // first account is untouched.
+    await VaultService.save(VaultEntry(
+      id: newId(),
+      title: 'Facebook extra',
+      username: 'shahid.extra',
+      password: 'pw4',
+      website: fbGroup.site.canonical,
+      category: 'Social',
+      updatedAtMs: nowMs,
+    ));
+    final regrouped = groupEntries(VaultService.entries);
+    expect(regrouped.length, 2);
+    expect(
+        regrouped
+            .firstWhere((g) => g.site.key == 'facebook')
+            .entries
+            .length,
+        3);
+    expect(
+        VaultService.entries
+            .where((e) => e.username == 'shahid.personal')
+            .length,
+        1);
+  });
+
+  test('v1.1.8: favicon URL resolution + cache keys', () {
+    final fb = siteCatalog.firstWhere((s) => s.key == 'facebook');
+    expect(faviconCacheKeyForSite(fb), 'facebook.com');
+    final urls = faviconCandidates(fb);
+    expect(urls.length, 2);
+    // Primary: standard lookup service returning a decodable PNG.
+    expect(urls[0].toString(),
+        'https://www.google.com/s2/favicons?domain=facebook.com&sz=128');
+    // Fallback: the site's own published favicon.
+    expect(urls[1].toString(), 'https://facebook.com/favicon.ico');
+    final mz = siteCatalog.firstWhere((s) => s.key == 'meezan');
+    expect(faviconCandidates(mz)[0].toString(), contains('meezanbank.com'));
+    // Cache keys normalize every variant to the same domain.
+    expect(faviconCacheKey('https://www.Facebook.com/profile'),
+        'facebook.com');
+    expect(faviconCacheKey('FACEBOOK.COM'), 'facebook.com');
+    expect(faviconCacheKey('facebook.com'), 'facebook.com');
+    expect(faviconCandidates(fallbackSite('')), isEmpty);
+  });
+
+  test('v1.1.8: favicon fetch failure returns null, success caches',
+      () async {
+    final dir = await Directory.systemTemp.createTemp('sf_fav_');
+    FaviconService.useDirectoryForTest(dir);
+    final fb = siteCatalog.firstWhere((s) => s.key == 'facebook');
+    // Failing fetcher: no bytes, no crash, monogram path.
+    final failed = await FaviconService.load(fb,
+        fetcher: (_) async => null);
+    expect(failed, isNull);
+    // Succeeding fetcher: bytes returned, then served from cache
+    // without calling the fetcher again.
+    var calls = 0;
+    Future<Uint8List?> okFetcher(Uri _) async {
+      calls++;
+      return Uint8List.fromList([1, 2, 3, 4]);
+    }
+
+    final first = await FaviconService.load(fb, fetcher: okFetcher);
+    expect(first, isNotNull);
+    final second = await FaviconService.load(fb, fetcher: okFetcher);
+    expect(second, isNotNull);
+    expect(calls, 1);
+    // File cache holds the same bytes for the next launch.
+    final file = faviconCacheFile(dir, 'facebook.com');
+    expect(await file.exists(), isTrue);
+    expect((await file.readAsBytes()).length, 4);
+  });
+
+  // Widget-level fallback, IO-free so it runs in this harness:
+  // a site whose favicon load returns null immediately (empty
+  // canonical) renders the monogram tile, never a broken image.
+  // NOTE (harness limit, proven 2026-10-26): any widget test that
+  // pumps SiteIcon with a seeded file-cache entry hangs in this
+  // sandbox under every pattern tried (pumpAndSettle, explicit
+  // pumps, runAsync around pumpWidget, runAsync delay + pumps) —
+  // the same family as the documented v1.1.4 Hive-isolate stall.
+  // File IO + image decode in widget tests is broken here, not
+  // in the app: the service test above proves corrupt cache bytes
+  // are returned, and Image.memory's errorBuilder (standard
+  // Flutter) maps undecodable bytes to the same monogram. The
+  // decode-failure rendering itself needs a real phone check.
+  testWidgets('v1.1.8: favicon load failure shows monogram tile',
+      (tester) async {
+    final site = fallbackSite('');
+    await tester.pumpWidget(
+        MaterialApp(home: Scaffold(body: SiteIcon(site: site))));
+    await tester.pump();
+    expect(find.text('?'), findsOneWidget);
   });
 }
