@@ -10,6 +10,7 @@ import '../widgets/transfer_sheet.dart';
 import '../widgets/wallet_logo.dart';
 import 'add_transaction.dart';
 import 'budgets.dart';
+import 'loans.dart';
 import 'transactions.dart';
 import 'wallets.dart';
 
@@ -279,6 +280,15 @@ class HomeScreen extends StatelessWidget {
                     label: 'Wallets',
                     onTap: () => Navigator.of(context).push(MaterialPageRoute(
                         builder: (_) => const WalletsScreen())),
+                  ),
+                  // v1.1.5: Loans tracker (taken + given), reachable
+                  // from Home — the 4-tab dock is unchanged.
+                  _quickAction(
+                    context,
+                    icon: Icons.handshake_outlined,
+                    label: 'Loans',
+                    onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => const LoansScreen())),
                   ),
                 ],
               ),

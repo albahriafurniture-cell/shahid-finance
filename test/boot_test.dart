@@ -66,8 +66,9 @@ void main() {
       (tester) async {
     // Seed invariants (wallets seeded in setUpAll — see note above):
     // categories seeded, Easypaisa is the seeded default.
-    // v1.1.4: +Family +My Self → 14 unique names (Other is shared).
-    expect(Store.uniqueCategoryCount, 14);
+    // v1.1.4: +Family +My Self; v1.1.5: income 'Others' is now a
+    // distinct name from expense 'Other' → 16 unique names.
+    expect(Store.uniqueCategoryCount, 16);
     expect(Store.allWallets.length, 4);
     expect(Store.defaultWallet?.name, 'Easypaisa');
     expect(Store.totalBalance, 0);
@@ -230,5 +231,185 @@ void main() {
     expect(find.text('This week'), findsOneWidget);
     expect(find.text('Today note'), findsWidgets);
     await Store.deleteTxn(todayTxn.id);
+  });
+
+  test('v1.1.5: income order is SDS, Freelance, Business, Salary, Others',
+      () {
+    final names =
+        Store.categoriesFor('income').map((c) => c.name).toList();
+    expect(names,
+        ['SDS', 'Freelance', 'Business', 'Salary', 'Others']);
+  });
+
+  test('v1.1.5: income migration reorders old data + renames Other',
+      () async {
+    // Simulate a pre-v1.1.5 user: old order, old 'Other' label, no SDS.
+    await Store.categories.clear();
+    final old = [
+      AppCategory(
+          id: 'salary',
+          name: 'Salary',
+          kind: 'income',
+          iconKey: 'payments',
+          strongColor: 0xFF076B3A,
+          tintColor: 0xFFDFF7E8,
+          sortOrder: 0),
+      AppCategory(
+          id: 'business',
+          name: 'Business',
+          kind: 'income',
+          iconKey: 'storefront',
+          strongColor: 0xFF2F7DE1,
+          tintColor: 0xFFE7F0FD,
+          sortOrder: 1),
+      AppCategory(
+          id: 'freelance',
+          name: 'Freelance',
+          kind: 'income',
+          iconKey: 'laptop_mac',
+          strongColor: 0xFF9B7EDE,
+          tintColor: 0xFFF0EBFC,
+          sortOrder: 2),
+      AppCategory(
+          id: 'other_income',
+          name: 'Other',
+          kind: 'income',
+          iconKey: 'more_horiz',
+          strongColor: 0xFF8795A1,
+          tintColor: 0xFFEEF2EF,
+          sortOrder: 3),
+    ];
+    for (final c in old) {
+      await Store.categories.put(c.id, c);
+    }
+    await Store.seedDefaults();
+    final names =
+        Store.categoriesFor('income').map((c) => c.name).toList();
+    expect(names,
+        ['SDS', 'Freelance', 'Business', 'Salary', 'Others']);
+    // Family / My Self are re-added by the seed block (compat).
+    expect(Store.categories.containsKey('family'), isTrue);
+    expect(Store.categories.containsKey('myself'), isTrue);
+  });
+
+  test('v1.1.5: subcategory is optional, round-trips, hidden in picker',
+      () async {
+    final w = Store.defaultWallet!;
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    // Picker hides Family / My Self, but the box still holds them.
+    final pickerNames =
+        Store.expensePickerCategories().map((c) => c.name).toSet();
+    expect(pickerNames.contains('Family'), isFalse);
+    expect(pickerNames.contains('My Self'), isFalse);
+    expect(
+        Store.categoriesFor('expense')
+            .map((c) => c.name)
+            .contains('Family'),
+        isTrue);
+    // None selected (default '') round-trips.
+    final noSub = MoneyTxn(
+      id: newId(),
+      type: 'expense',
+      amount: 1000,
+      walletId: w.id,
+      categoryId: 'food',
+      dateMs: nowMs,
+      createdAtMs: nowMs,
+    );
+    expect(noSub.subCategory, '');
+    expect(MoneyTxn.fromJson(noSub.toJson()).subCategory, '');
+    await Store.saveTxn(noSub);
+    expect(Store.txns.get(noSub.id)?.subCategory, '');
+    await Store.deleteTxn(noSub.id);
+    // 'Family' subcategory round-trips via JSON + Hive + snapshot.
+    final withSub = MoneyTxn(
+      id: newId(),
+      type: 'expense',
+      amount: 2000,
+      walletId: w.id,
+      categoryId: 'food',
+      dateMs: nowMs,
+      createdAtMs: nowMs,
+      subCategory: 'Family',
+    );
+    expect(MoneyTxn.fromJson(withSub.toJson()).subCategory, 'Family');
+    await Store.saveTxn(withSub);
+    expect(Store.txns.get(withSub.id)?.subCategory, 'Family');
+    final snapTxn = (Store.snapshot()['transactions'] as List)
+        .cast<Map<String, dynamic>>()
+        .firstWhere((j) => j['id'] == withSub.id);
+    expect(snapTxn['subCategory'], 'Family');
+    await Store.deleteTxn(withSub.id);
+  });
+
+  test('v1.1.5: loan remaining math, auto-settle, reopen on delete',
+      () async {
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final loan = Loan(
+      id: newId(),
+      personName: 'Test Person',
+      direction: 'taken',
+      principal: 100000,
+      dateMs: nowMs,
+      createdAtMs: nowMs,
+    );
+    await Store.saveLoan(loan);
+    expect(Store.remainingFor(loan), 100000);
+    expect(Store.isSettled(loan), isFalse);
+    final p1 = LoanPayment(
+        id: newId(), loanId: loan.id, amount: 30000, dateMs: nowMs,
+        createdAtMs: nowMs);
+    final p2 = LoanPayment(
+        id: newId(), loanId: loan.id, amount: 20000, dateMs: nowMs,
+        createdAtMs: nowMs);
+    await Store.savePayment(p1);
+    await Store.savePayment(p2);
+    expect(Store.paidFor(loan.id), 50000);
+    expect(Store.remainingFor(loan), 50000);
+    expect(Store.isSettled(loan), isFalse);
+    final p3 = LoanPayment(
+        id: newId(), loanId: loan.id, amount: 50000, dateMs: nowMs,
+        createdAtMs: nowMs);
+    await Store.savePayment(p3);
+    expect(Store.remainingFor(loan), 0);
+    expect(Store.isSettled(loan), isTrue);
+    // Deleting the settling payment reopens the loan.
+    await Store.deletePayment(p3.id);
+    expect(Store.remainingFor(loan), 50000);
+    expect(Store.isSettled(loan), isFalse);
+    await Store.deleteLoan(loan.id);
+    expect(Store.loans.get(loan.id), isNull);
+    expect(Store.paymentsFor(loan.id), isEmpty);
+  });
+
+  test('v1.1.5: loans never affect wallet, income or expense totals',
+      () async {
+    final beforeBalance = Store.totalBalance;
+    final beforeIn = Store.sumIn(Store.allTxnsDesc);
+    final beforeOut = Store.sumOut(Store.allTxnsDesc);
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final loan = Loan(
+      id: newId(),
+      personName: 'Isolation Check',
+      direction: 'given',
+      principal: 75000,
+      dateMs: nowMs,
+      createdAtMs: nowMs,
+    );
+    await Store.saveLoan(loan);
+    await Store.savePayment(LoanPayment(
+        id: newId(), loanId: loan.id, amount: 25000, dateMs: nowMs,
+        createdAtMs: nowMs));
+    expect(Store.totalBalance, beforeBalance);
+    expect(Store.sumIn(Store.allTxnsDesc), beforeIn);
+    expect(Store.sumOut(Store.allTxnsDesc), beforeOut);
+    // Loans ride along in the cloud snapshot (small records).
+    final snapLoans = (Store.snapshot()['loans'] as List)
+        .cast<Map<String, dynamic>>();
+    expect(snapLoans.any((j) => j['id'] == loan.id), isTrue);
+    final snapPayments = (Store.snapshot()['loanPayments'] as List)
+        .cast<Map<String, dynamic>>();
+    expect(snapPayments.any((j) => j['loanId'] == loan.id), isTrue);
+    await Store.deleteLoan(loan.id);
   });
 }

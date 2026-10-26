@@ -920,6 +920,8 @@ Future<void> showTxnDetailSheet(BuildContext context, MoneyTxn t) async {
               Store.walletById(t.toWalletId)?.name ?? '—'),
         _detailField('Date', '${fmtDate(t.date)} · ${fmtTime(t.date)}'),
         if (cat != null) _detailField('Category', cat.name),
+        if (t.isExpense && t.subCategory.isNotEmpty)
+          _detailField('Subcategory', t.subCategory),
         _detailField('Note', t.note.isEmpty ? '—' : t.note),
         // v1.1.4: receipt thumbnail; tap opens the full photo.
         if (t.receiptPath.isNotEmpty)

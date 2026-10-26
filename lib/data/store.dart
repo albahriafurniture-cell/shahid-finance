@@ -17,12 +17,16 @@ class Store {
   static const budgetsBox = 'budgets';
   static const categoriesBox = 'categories';
   static const settingsBox = 'settings';
+  static const loansBox = 'loans';
+  static const loanPaymentsBox = 'loan_payments';
 
   static late Box<Wallet> wallets;
   static late Box<MoneyTxn> txns;
   static late Box<Budget> budgets;
   static late Box<AppCategory> categories;
   static late Box settings;
+  static late Box<Loan> loans;
+  static late Box<LoanPayment> loanPayments;
 
   /// Bumped on every mutation; screens listen and rebuild.
   static final ValueNotifier<int> changes = ValueNotifier<int>(0);
@@ -38,6 +42,10 @@ class Store {
       Hive.registerAdapter(AppCategoryAdapter());
     }
     if (!Hive.isAdapterRegistered(3)) Hive.registerAdapter(BudgetAdapter());
+    if (!Hive.isAdapterRegistered(4)) Hive.registerAdapter(LoanAdapter());
+    if (!Hive.isAdapterRegistered(5)) {
+      Hive.registerAdapter(LoanPaymentAdapter());
+    }
     _adaptersRegistered = true;
   }
 
@@ -67,6 +75,8 @@ class Store {
     budgets = await Hive.openBox<Budget>(budgetsBox);
     categories = await Hive.openBox<AppCategory>(categoriesBox);
     settings = await Hive.openBox(settingsBox);
+    loans = await Hive.openBox<Loan>(loansBox);
+    loanPayments = await Hive.openBox<LoanPayment>(loanPaymentsBox);
   }
 
   // ---------------------------------------------------------------- settings
@@ -115,13 +125,18 @@ class Store {
             0xFFEAF3E6, 7),
         _cat('other_expense', 'Other', 'expense', 'more_horiz', 0xFF8795A1,
             0xFFEEF2EF, 8),
-        _cat('salary', 'Salary', 'income', 'payments', 0xFF076B3A, 0xFFDFF7E8, 0),
-        _cat('business', 'Business', 'income', 'storefront', 0xFF2F7DE1,
-            0xFFE7F0FD, 1),
+        // v1.1.5 income order (user order, exact): SDS, Freelance,
+        // Business, Salary, Others.
+        _cat('sds', 'SDS', 'income', 'storefront', 0xFF076B3A, 0xFFDFF7E8,
+            0),
         _cat('freelance', 'Freelance', 'income', 'laptop_mac', 0xFF9B7EDE,
-            0xFFF0EBFC, 2),
-        _cat('other_income', 'Other', 'income', 'more_horiz', 0xFF8795A1,
-            0xFFEEF2EF, 3),
+            0xFFF0EBFC, 1),
+        _cat('business', 'Business', 'income', 'storefront', 0xFF2F7DE1,
+            0xFFE7F0FD, 2),
+        _cat('salary', 'Salary', 'income', 'payments', 0xFF076B3A,
+            0xFFDFF7E8, 3),
+        _cat('other_income', 'Others', 'income', 'more_horiz', 0xFF8795A1,
+            0xFFEEF2EF, 4),
       ];
       for (final c in seed) {
         await categories.put(c.id, c);
@@ -129,12 +144,45 @@ class Store {
     }
     // v1.1.4 migration: "Family" and "My Self" (user's exact spellings)
     // must appear for EXISTING users too, not only fresh installs.
+    // v1.1.5: they stay in the box for backward compat (old v1.1.4
+    // transactions that used them as a main category still render),
+    // but they are no longer offered in the expense picker — they are
+    // optional subcategories now (see expensePickerCategories).
     for (final c in [
       _cat('family', 'Family', 'expense', 'group', 0xFFE56AA0, 0xFFFCE9F2, 9),
       _cat('myself', 'My Self', 'expense', 'person', 0xFF00D4FF, 0xFFE0F7FF,
           10),
     ]) {
       if (!categories.containsKey(c.id)) await categories.put(c.id, c);
+    }
+    // v1.1.5 income migration (existing users): enforce the exact
+    // order SDS, Freelance, Business, Salary, Others — add SDS if
+    // missing, rename old 'Other' income label to 'Others', reorder
+    // by id regardless of the previous sortOrder.
+    const incomeOrder = {
+      'sds': 0,
+      'freelance': 1,
+      'business': 2,
+      'salary': 3,
+      'other_income': 4,
+    };
+    if (!categories.containsKey('sds')) {
+      await categories.put(
+          'sds',
+          _cat('sds', 'SDS', 'income', 'storefront', 0xFF076B3A,
+              0xFFDFF7E8, 0));
+    }
+    final otherInc = categories.get('other_income');
+    if (otherInc != null && otherInc.name == 'Other') {
+      otherInc.name = 'Others';
+      await categories.put(otherInc.id, otherInc);
+    }
+    for (final e in incomeOrder.entries) {
+      final c = categories.get(e.key);
+      if (c != null && c.sortOrder != e.value) {
+        c.sortOrder = e.value;
+        await categories.put(c.id, c);
+      }
     }
     // First-run defaults for scalar settings.
     final defaults = <String, Object>{
@@ -383,6 +431,74 @@ class Store {
 
   static AppCategory? categoryById(String id) => categories.get(id);
 
+  /// v1.1.5: ids that stopped being main expense categories and
+  /// became optional subcategories. Kept in the box (old transactions
+  /// still resolve through categoryById); only the picker hides them.
+  static const subCategoryIds = {'family', 'myself'};
+
+  /// Expense categories offered in the Add Expense picker: main
+  /// categories only — Family / My Self are subcategories now.
+  static List<AppCategory> expensePickerCategories() => categoriesFor('expense')
+      .where((c) => !subCategoryIds.contains(c.id))
+      .toList();
+
+  /// Optional expense subcategory labels, in display order.
+  static const expenseSubCategories = ['Family', 'My Self'];
+
+  // ------------------------------------------------------------------- loans
+  /// Loans are a SEPARATE tracker: creating a loan or a payment never
+  /// touches wallets, transactions, income or expense totals — the
+  /// helpers below only read/write the loans boxes.
+  static List<Loan> get allLoans {
+    final list = loans.values.toList();
+    list.sort((a, b) => b.dateMs.compareTo(a.dateMs));
+    return list;
+  }
+
+  static List<Loan> loansFor(String direction) =>
+      allLoans.where((l) => l.direction == direction).toList();
+
+  static List<LoanPayment> paymentsFor(String loanId) {
+    final list =
+        loanPayments.values.where((p) => p.loanId == loanId).toList();
+    list.sort((a, b) => b.dateMs.compareTo(a.dateMs));
+    return list;
+  }
+
+  static int paidFor(String loanId) =>
+      paymentsFor(loanId).fold(0, (s, p) => s + p.amount);
+
+  static int remainingFor(Loan loan) =>
+      (loan.principal - paidFor(loan.id)).clamp(0, loan.principal);
+
+  static bool isSettled(Loan loan) => remainingFor(loan) <= 0;
+
+  static int outstandingFor(String direction) =>
+      loansFor(direction).fold(0, (s, l) => s + remainingFor(l));
+
+  static Future<void> saveLoan(Loan loan) async {
+    await loans.put(loan.id, loan);
+    bump();
+  }
+
+  static Future<void> deleteLoan(String id) async {
+    for (final p in paymentsFor(id)) {
+      await loanPayments.delete(p.id);
+    }
+    await loans.delete(id);
+    bump();
+  }
+
+  static Future<void> savePayment(LoanPayment payment) async {
+    await loanPayments.put(payment.id, payment);
+    bump();
+  }
+
+  static Future<void> deletePayment(String id) async {
+    await loanPayments.delete(id);
+    bump();
+  }
+
   /// Unique category count (Other is shared between kinds) — "12 categories".
   static int get uniqueCategoryCount =>
       categories.values.where((c) => !c.archived).map((c) => c.name).toSet().length;
@@ -397,6 +513,8 @@ class Store {
       'transactions': txns.values.map((t) => t.toJson()).toList(),
       'budgets': allBudgets.map((b) => b.toJson()).toList(),
       'categories': categories.values.map((c) => c.toJson()).toList(),
+      'loans': loans.values.map((l) => l.toJson()).toList(),
+      'loanPayments': loanPayments.values.map((p) => p.toJson()).toList(),
       'settings': {
         for (final k in settings.keys) k as String: settings.get(k),
       },
@@ -408,6 +526,8 @@ class Store {
     await txns.clear();
     await budgets.clear();
     await categories.clear();
+    await loans.clear();
+    await loanPayments.clear();
     for (final j in (snap['wallets'] as List? ?? [])) {
       final w = Wallet.fromJson(Map<String, dynamic>.from(j as Map));
       await wallets.put(w.id, w);
@@ -423,6 +543,14 @@ class Store {
     for (final j in (snap['categories'] as List? ?? [])) {
       final c = AppCategory.fromJson(Map<String, dynamic>.from(j as Map));
       await categories.put(c.id, c);
+    }
+    for (final j in (snap['loans'] as List? ?? [])) {
+      final l = Loan.fromJson(Map<String, dynamic>.from(j as Map));
+      await loans.put(l.id, l);
+    }
+    for (final j in (snap['loanPayments'] as List? ?? [])) {
+      final p = LoanPayment.fromJson(Map<String, dynamic>.from(j as Map));
+      await loanPayments.put(p.id, p);
     }
     final savedSettings = snap['settings'];
     if (savedSettings is Map) {

@@ -111,6 +111,13 @@ class MoneyTxn {
   /// never break backup/restore. '' = no receipt.
   String receiptPath;
 
+  /// v1.1.5: optional expense SUBcategory — '' = none, otherwise
+  /// 'Family' or 'My Self' (user's exact spellings). Optional by
+  /// design: saving works with none selected. In v1.1.4 these were
+  /// main categories; old transactions that used them as a main
+  /// category keep rendering via categoryId (see store.dart).
+  String subCategory;
+
   MoneyTxn({
     required this.id,
     required this.type,
@@ -122,6 +129,7 @@ class MoneyTxn {
     required this.dateMs,
     required this.createdAtMs,
     this.receiptPath = '',
+    this.subCategory = '',
   });
 
   DateTime get date => DateTime.fromMillisecondsSinceEpoch(dateMs);
@@ -153,6 +161,7 @@ class MoneyTxn {
         'dateMs': dateMs,
         'createdAtMs': createdAtMs,
         'receiptPath': receiptPath,
+        'subCategory': subCategory,
       };
 
   factory MoneyTxn.fromJson(Map<String, dynamic> j) => MoneyTxn(
@@ -166,6 +175,7 @@ class MoneyTxn {
         dateMs: (j['dateMs'] as num).toInt(),
         createdAtMs: (j['createdAtMs'] as num?)?.toInt() ?? 0,
         receiptPath: (j['receiptPath'] as String?) ?? '',
+        subCategory: (j['subCategory'] as String?) ?? '',
       );
 }
 
@@ -193,6 +203,14 @@ class MoneyTxnAdapter extends TypeAdapter<MoneyTxn> {
     } catch (_) {
       receiptPath = '';
     }
+    // v1.1.5 field, appended last: pre-v1.1.5 records were written
+    // without it, so a missing trailing string reads as ''.
+    String subCategory = '';
+    try {
+      subCategory = reader.readString();
+    } catch (_) {
+      subCategory = '';
+    }
     return MoneyTxn(
       id: id,
       type: type,
@@ -204,6 +222,7 @@ class MoneyTxnAdapter extends TypeAdapter<MoneyTxn> {
       dateMs: dateMs,
       createdAtMs: createdAtMs,
       receiptPath: receiptPath,
+      subCategory: subCategory,
     );
   }
 
@@ -219,6 +238,154 @@ class MoneyTxnAdapter extends TypeAdapter<MoneyTxn> {
     writer.writeInt(obj.dateMs);
     writer.writeInt(obj.createdAtMs);
     writer.writeString(obj.receiptPath);
+    writer.writeString(obj.subCategory);
+  }
+}
+
+/// v1.1.5: a loan record — a SEPARATE tracker, never a wallet
+/// transaction. direction: 'taken' (user borrowed from someone) or
+/// 'given' (user lent to someone). principal = kitna liya/diya tha.
+/// Payments live in their own box; remaining = principal − payments.
+class Loan {
+  String id;
+  String personName;
+  String direction; // taken | given
+  int principal;
+  int dateMs; // kab liya / kab diya
+  String phone; // optional
+  String note; // optional
+  int createdAtMs;
+
+  Loan({
+    required this.id,
+    required this.personName,
+    required this.direction,
+    required this.principal,
+    required this.dateMs,
+    this.phone = '',
+    this.note = '',
+    required this.createdAtMs,
+  });
+
+  bool get isTaken => direction == 'taken';
+  bool get isGiven => direction == 'given';
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'personName': personName,
+        'direction': direction,
+        'principal': principal,
+        'dateMs': dateMs,
+        'phone': phone,
+        'note': note,
+        'createdAtMs': createdAtMs,
+      };
+
+  factory Loan.fromJson(Map<String, dynamic> j) => Loan(
+        id: j['id'] as String,
+        personName: j['personName'] as String,
+        direction: j['direction'] as String,
+        principal: (j['principal'] as num).toInt(),
+        dateMs: (j['dateMs'] as num).toInt(),
+        phone: (j['phone'] as String?) ?? '',
+        note: (j['note'] as String?) ?? '',
+        createdAtMs: (j['createdAtMs'] as num?)?.toInt() ?? 0,
+      );
+}
+
+class LoanAdapter extends TypeAdapter<Loan> {
+  @override
+  final int typeId = 4;
+
+  @override
+  Loan read(BinaryReader reader) {
+    return Loan(
+      id: reader.readString(),
+      personName: reader.readString(),
+      direction: reader.readString(),
+      principal: reader.readInt(),
+      dateMs: reader.readInt(),
+      phone: reader.readString(),
+      note: reader.readString(),
+      createdAtMs: reader.readInt(),
+    );
+  }
+
+  @override
+  void write(BinaryWriter writer, Loan obj) {
+    writer.writeString(obj.id);
+    writer.writeString(obj.personName);
+    writer.writeString(obj.direction);
+    writer.writeInt(obj.principal);
+    writer.writeInt(obj.dateMs);
+    writer.writeString(obj.phone);
+    writer.writeString(obj.note);
+    writer.writeInt(obj.createdAtMs);
+  }
+}
+
+/// One (partial) repayment against a loan — kitna diya / kitna wapas
+/// mila, with its own date. Deleting a payment reopens a settled loan.
+class LoanPayment {
+  String id;
+  String loanId;
+  int amount;
+  int dateMs;
+  String note;
+  int createdAtMs;
+
+  LoanPayment({
+    required this.id,
+    required this.loanId,
+    required this.amount,
+    required this.dateMs,
+    this.note = '',
+    required this.createdAtMs,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'loanId': loanId,
+        'amount': amount,
+        'dateMs': dateMs,
+        'note': note,
+        'createdAtMs': createdAtMs,
+      };
+
+  factory LoanPayment.fromJson(Map<String, dynamic> j) => LoanPayment(
+        id: j['id'] as String,
+        loanId: j['loanId'] as String,
+        amount: (j['amount'] as num).toInt(),
+        dateMs: (j['dateMs'] as num).toInt(),
+        note: (j['note'] as String?) ?? '',
+        createdAtMs: (j['createdAtMs'] as num?)?.toInt() ?? 0,
+      );
+}
+
+class LoanPaymentAdapter extends TypeAdapter<LoanPayment> {
+  @override
+  final int typeId = 5;
+
+  @override
+  LoanPayment read(BinaryReader reader) {
+    return LoanPayment(
+      id: reader.readString(),
+      loanId: reader.readString(),
+      amount: reader.readInt(),
+      dateMs: reader.readInt(),
+      note: reader.readString(),
+      createdAtMs: reader.readInt(),
+    );
+  }
+
+  @override
+  void write(BinaryWriter writer, LoanPayment obj) {
+    writer.writeString(obj.id);
+    writer.writeString(obj.loanId);
+    writer.writeInt(obj.amount);
+    writer.writeInt(obj.dateMs);
+    writer.writeString(obj.note);
+    writer.writeInt(obj.createdAtMs);
   }
 }
 

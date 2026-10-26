@@ -363,6 +363,10 @@ class TxnRow extends StatelessWidget {
     final title = txn.note.isNotEmpty
         ? txn.note
         : (cat?.name ?? 'Transaction');
+    // v1.1.5: optional subcategory tag on the row when set.
+    final subTag = txn.isExpense && txn.subCategory.isNotEmpty
+        ? ' · ${txn.subCategory}'
+        : '';
     return _rowShell(
       tile: cat != null
           ? CategoryTile(category: cat)
@@ -377,7 +381,7 @@ class TxnRow extends StatelessWidget {
                   size: 22, color: AppColors.inkTertiary),
             ),
       title: title,
-      caption: '${wallet?.name ?? ''} · ${fmtTime(txn.date)}',
+      caption: '${wallet?.name ?? ''} · ${fmtTime(txn.date)}$subTag',
       amountText: hidden
           ? 'Rs ••••••'
           : fmtSigned(txn.amount, income: txn.isIncome),

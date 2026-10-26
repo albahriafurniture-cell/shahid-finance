@@ -42,6 +42,9 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   AppCategory? _category;
   Wallet? _wallet;
   late DateTime _date;
+  // v1.1.5: optional expense subcategory — '' = none. Never
+  // required; saving works with none selected.
+  String _subCategory = '';
   // v1.1.4 receipt: id is fixed up front so the photo file name can
   // be derived before saving; preview file for a newly picked photo.
   late final String _txnId;
@@ -59,6 +62,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       _receiptExistingFuture = ReceiptService.fileFor(_receiptFileName);
     }
     _income = ex != null ? ex.isIncome : widget.initialIncome;
+    _subCategory = ex?.subCategory ?? '';
     _amountCtrl = TextEditingController(
         text: ex != null ? groupPakistani(ex.amount.abs()) : '');
     _noteCtrl = TextEditingController(text: ex?.note ?? '');
@@ -138,6 +142,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       dateMs: dateTime.millisecondsSinceEpoch,
       createdAtMs: ex?.createdAtMs ?? now.millisecondsSinceEpoch,
       receiptPath: _income ? '' : _receiptFileName,
+      subCategory: _income ? '' : _subCategory,
     );
     await Store.saveTxn(txn);
     if (!mounted) return;
@@ -174,8 +179,19 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final kind = _income ? 'income' : 'expense';
-    final cats = Store.categoriesFor(kind);
+    // v1.1.5: the expense picker hides Family / My Self (they are
+    // optional subcategories now). Exception: when editing an old
+    // v1.1.4 transaction whose MAIN category was one of them, keep
+    // it visible so the selection is not silently lost.
+    var cats = _income
+        ? Store.categoriesFor('income')
+        : Store.expensePickerCategories();
+    if (!_income &&
+        _category != null &&
+        Store.subCategoryIds.contains(_category!.id) &&
+        !cats.any((c) => c.id == _category!.id)) {
+      cats = [...cats, _category!];
+    }
     final title = widget.isEdit
         ? 'Edit Transaction'
         : (_income ? 'Add Income' : 'Add Expense');
@@ -272,6 +288,24 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                       for (final c in cats) _categoryTile(c),
                     ],
                   ),
+                  // v1.1.5: optional subcategory, expense only.
+                  // None / Family / My Self chips; none is a valid
+                  // choice and the default.
+                  if (!_income) ...[
+                    const SizedBox(height: 24),
+                    Text('Subcategory (optional)',
+                        style: AppText.label.copyWith(
+                            color: AppColors.inkSecondary)),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final sub in ['', ...Store.expenseSubCategories])
+                          _subChip(sub),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 24),
                   // Details card
                   Container(
@@ -538,6 +572,29 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
         borderRadius: BorderRadius.circular(AppRadius.pill),
       ),
       child: Row(children: [seg('Income', true), seg('Expense', false)]),
+    );
+  }
+
+  Widget _subChip(String sub) {
+    final selected = _subCategory == sub;
+    final label = sub.isEmpty ? 'None' : sub;
+    return GestureDetector(
+      onTap: () => setState(() => _subCategory = sub),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.accent : AppColors.surface,
+          borderRadius: BorderRadius.circular(AppRadius.pill),
+          border: Border.all(
+            color: selected ? AppColors.accent : AppColors.hairline,
+          ),
+        ),
+        child: Text(label,
+            style: AppText.label.copyWith(
+              fontWeight: FontWeight.w700,
+              color: selected ? Colors.white : AppColors.inkSecondary,
+            )),
+      ),
     );
   }
 
