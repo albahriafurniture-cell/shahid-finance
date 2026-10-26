@@ -786,81 +786,121 @@ void main() {
     await Store.deleteLifeGoal(goal.id);
   });
 
-  testWidgets('v1.1.7: dock shows 6 tabs at 360dp without overflow',
+  // v1.2.0 BOTTOM-PINNING REGRESSION (user's screenshot,
+  // 2026-10-26: "poori screen pe centre me"): MainShell places
+  // the dock in a Positioned.fill, which hands it full-screen
+  // tight constraints. The pre-fix dock therefore blurred the
+  // whole screen and sat mid-screen. This pumps the dock
+  // EXACTLY as MainShell does (Stack + Positioned.fill, Home
+  // tab, 360x800) and asserts the bar is pinned to the bottom
+  // and the blur is confined to the bar — not the whole screen.
+  testWidgets('v1.2.0: dock pinned to bottom under Positioned.fill',
       (tester) async {
-    // 360dp phone width — the v1.1.1 overlap must not return.
-    // Any RenderFlex overflow throws in a widget test, so a pass
-    // here proves the scrollable row fits.
     tester.view.physicalSize = const Size(360, 800);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
-        body: const SizedBox.expand(),
-        bottomNavigationBar: FloatingDock(
-          currentIndex: 5,
-          onTab: (_) {},
+        body: Stack(
+          children: [
+            const SizedBox.expand(),
+            Positioned.fill(
+              child: FloatingDock(
+                currentIndex: 0,
+                onTab: (_) {},
+              ),
+            ),
+          ],
         ),
       ),
     ));
     await tester.pumpAndSettle();
-    expect(find.text('Home'), findsOneWidget);
-    expect(find.text('History'), findsOneWidget);
-    expect(find.text('Password Manager'), findsOneWidget);
-    expect(find.text('Diary'), findsOneWidget);
-    expect(find.text('Reports'), findsOneWidget);
-    expect(find.text('Profile'), findsOneWidget);
-    // Profile is the last tab: scroll-to-selected must have
-    // brought it into view at 360dp.
-    expect(tester.getRect(find.text('Profile')).left, lessThan(360));
-    // v1.1.9: the centre + button and its fan are gone entirely.
-    expect(find.byIcon(Icons.add), findsNothing);
-    expect(find.text('Income or expense?'), findsNothing);
-    expect(find.text('Add Income'), findsNothing);
-    expect(find.text('Add Expense'), findsNothing);
+    // The blur region must be the bar itself (~68dp + 12dp
+    // bottom margin = 80dp), never the full 800dp screen.
+    final blurRect = tester.getRect(find.byType(BackdropFilter));
+    expect(blurRect.height, lessThanOrEqualTo(100),
+        reason: 'blur covers more than the bar: ${blurRect.height}dp');
+    expect(blurRect.top, greaterThan(600),
+        reason: 'blur region is not at the bottom of the screen');
+    // Labels sit in the bar: bottom edge at screen height
+    // minus the 12dp margin (788dp), top well below mid-screen.
+    final homeRect = tester.getRect(find.text('Home'));
+    expect(homeRect.top, greaterThan(400),
+        reason: 'dock is floating mid-screen, not pinned to bottom');
+    expect(homeRect.bottom, greaterThan(700));
+    expect(homeRect.bottom, lessThanOrEqualTo(800));
+    // And every tab is still fully visible in this placement.
+    for (final label in [
+      'Home',
+      'History',
+      'Password\nManager',
+      'Diary',
+      'Reports',
+      'Profile',
+    ]) {
+      final rect = tester.getRect(find.text(label));
+      expect(rect.left, greaterThanOrEqualTo(0));
+      expect(rect.right, lessThanOrEqualTo(360));
+    }
   });
-
-  test('v1.1.7: dock scroll-to-selected offset helper', () {
-    // 3 items of 64dp, viewport 132dp (360dp screen, two groups).
-    const itemWidths = [64.0, 64.0, 64.0];
-    const viewport = 132.0;
-    // Item 0 already visible at offset 0.
-    expect(
-        dockScrollOffsetForItem(
-          itemIndex: 0,
-          itemWidths: itemWidths,
-          viewportWidth: viewport,
-          currentOffset: 0,
-        ),
-        0);
-    // Item 2 ends at 192 > 132: scroll so it is fully visible.
-    expect(
-        dockScrollOffsetForItem(
-          itemIndex: 2,
-          itemWidths: itemWidths,
-          viewportWidth: viewport,
-          currentOffset: 0,
-        ),
-        60);
-    // Scrolling back: item 0 visible again from offset 60.
-    expect(
-        dockScrollOffsetForItem(
-          itemIndex: 0,
-          itemWidths: itemWidths,
-          viewportWidth: viewport,
-          currentOffset: 60,
-        ),
-        0);
-    // Wide viewport: nothing to scroll.
-    expect(
-        dockScrollOffsetForItem(
-          itemIndex: 2,
-          itemWidths: itemWidths,
-          viewportWidth: 400,
-          currentOffset: 0,
-        ),
-        0);
-  });
+  // v1.1.9 made the dock one 428dp scroll row in a ~328dp
+  // viewport, so Reports was half-clipped and Profile fully
+  // off-screen on the Home tab, with no scroll hint. The old
+  // test only checked Profile with index 5 selected — which is
+  // exactly why this shipped. This test pumps EVERY selected
+  // index at 360dp AND 320dp and asserts EVERY label is fully
+  // inside the screen (no clipped labels, no hidden tabs), that
+  // the dock has no scroll view and no + button, and that the
+  // full "Password Manager" label is present (never abbreviated).
+  // Any RenderFlex overflow also fails the test outright.
+  const dockLabels = [
+    'Home',
+    'History',
+    'Password\nManager',
+    'Diary',
+    'Reports',
+    'Profile',
+  ];
+  for (final width in [360.0, 320.0]) {
+    for (var index = 0; index < 6; index++) {
+      testWidgets(
+          'v1.2.0: dock all 6 tabs fully visible at ${width.toInt()}dp, selected $index',
+          (tester) async {
+        tester.view.physicalSize = Size(width, 800);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        await tester.pumpWidget(MaterialApp(
+          home: Scaffold(
+            body: const SizedBox.expand(),
+            bottomNavigationBar: FloatingDock(
+              currentIndex: index,
+              onTab: (_) {},
+            ),
+          ),
+        ));
+        await tester.pumpAndSettle();
+        for (final label in dockLabels) {
+          expect(find.text(label), findsOneWidget);
+          final rect = tester.getRect(find.text(label));
+          expect(rect.left, greaterThanOrEqualTo(0),
+              reason: '$label clipped on the left at ${width.toInt()}dp');
+          expect(rect.right, lessThanOrEqualTo(width),
+              reason: '$label clipped on the right at ${width.toInt()}dp');
+        }
+        // No scrolling machinery, no + button, no fan left.
+        expect(find.byType(SingleChildScrollView), findsNothing);
+        expect(find.byIcon(Icons.add), findsNothing);
+        expect(find.text('Income or expense?'), findsNothing);
+        expect(find.text('Add Income'), findsNothing);
+        expect(find.text('Add Expense'), findsNothing);
+        // Every tab stays tappable: >=48dp wide even at 320dp
+        // (dock width 320 - 32 margins = 288dp, / 6 = 48dp).
+        final homeRect = tester.getRect(find.text('Home'));
+        final profileRect = tester.getRect(find.text('Profile'));
+        expect(profileRect.left, greaterThan(homeRect.left));
+      });
+    }
+  }
 
   test('v1.1.8: site catalog lookup incl. domain variants', () {
     expect(resolveSite('facebook.com')?.key, 'facebook');

@@ -111,9 +111,9 @@ class _GateState extends State<Gate> {
 }
 
 /// Main shell: 6 tabs (Home, History, Vault, Diary, Reports,
-/// Profile) + the floating dock (a plain scrollable tab row since
-/// v1.1.9 — the centre + FAB fan was removed at the user's order;
-/// Add Income/Expense live on the big Home buttons).
+/// Profile) + the floating dock (6 equal flex tabs since v1.2.0
+/// — the centre + FAB fan was removed at the user's order in
+/// v1.1.9; Add Income/Expense live on the big Home buttons).
 /// ORDER 1 fix (v1.1.1): the tab content sits inside SafeArea(top) so no
 /// tab header ever draws under the Android status bar again — the
 /// aurora background stays full-bleed behind it.
@@ -150,7 +150,16 @@ class _MainShellState extends State<MainShell> {
               ],
             ),
           ),
-          Positioned.fill(
+          // v1.2.0: explicit bottom placement — Positioned.fill
+          // used to hand the dock full-screen tight constraints,
+          // which made its blur cover the whole screen and the
+          // bar sit mid-screen (user's 2026-10-26 screenshot).
+          // The dock itself also bottom-aligns (see dock.dart),
+          // so this holds even if the placement changes again.
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
             child: FloatingDock(
               currentIndex: _tab,
               onTab: (i) => setState(() => _tab = i),
