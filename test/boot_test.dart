@@ -1,13 +1,15 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
 import 'package:shahid_finance/data/models.dart';
 import 'package:shahid_finance/data/store.dart';
 import 'package:shahid_finance/main.dart';
 import 'package:shahid_finance/screens/home.dart';
+import 'package:shahid_finance/screens/vault.dart';
+import 'package:shahid_finance/services/ai_suggest.dart';
 import 'package:shahid_finance/services/auth_gate.dart';
 import 'package:shahid_finance/services/favicon_service.dart';
 import 'package:shahid_finance/services/vault_service.dart';
@@ -788,7 +790,7 @@ void main() {
       (tester) async {
     // 360dp phone width — the v1.1.1 overlap must not return.
     // Any RenderFlex overflow throws in a widget test, so a pass
-    // here proves the scrollable side groups fit.
+    // here proves the scrollable row fits.
     tester.view.physicalSize = const Size(360, 800);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -798,8 +800,6 @@ void main() {
         bottomNavigationBar: FloatingDock(
           currentIndex: 5,
           onTab: (_) {},
-          onAddIncome: () {},
-          onAddExpense: () {},
         ),
       ),
     ));
@@ -810,9 +810,14 @@ void main() {
     expect(find.text('Diary'), findsOneWidget);
     expect(find.text('Reports'), findsOneWidget);
     expect(find.text('Profile'), findsOneWidget);
-    // Profile is the last right-group tab: scroll-to-selected must
-    // have brought it into view at 360dp.
+    // Profile is the last tab: scroll-to-selected must have
+    // brought it into view at 360dp.
     expect(tester.getRect(find.text('Profile')).left, lessThan(360));
+    // v1.1.9: the centre + button and its fan are gone entirely.
+    expect(find.byIcon(Icons.add), findsNothing);
+    expect(find.text('Income or expense?'), findsNothing);
+    expect(find.text('Add Income'), findsNothing);
+    expect(find.text('Add Expense'), findsNothing);
   });
 
   test('v1.1.7: dock scroll-to-selected offset helper', () {
@@ -1051,5 +1056,189 @@ void main() {
         MaterialApp(home: Scaffold(body: SiteIcon(site: site))));
     await tester.pump();
     expect(find.text('?'), findsOneWidget);
+  });
+
+  // ------------------------------------------------------------ v1.1.9
+
+  testWidgets(
+      'v1.1.9: vault gate dead-end reproduced — locked, no Add, Set up PIN offered',
+      (tester) async {
+    // Test env: no biometrics and no app PIN, exactly the user's
+    // dead-end: AuthGate can never succeed, so the old screen
+    // looped "Unlock vault" forever with no way in. The local_auth
+    // platform channel never answers in this sandbox (same family
+    // as the Hive-isolate stall), so mock it to "no biometrics".
+    const channel = MethodChannel('plugins.flutter.io/local_auth');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (_) async => false);
+    addTearDown(() => TestDefaultBinaryMessengerBinding
+        .instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, null));
+    await tester.pumpWidget(
+        const MaterialApp(home: Scaffold(body: VaultScreen())));
+    await tester.pumpAndSettle();
+    expect(find.text('Vault locked'), findsOneWidget);
+    expect(find.text('Add Password'), findsNothing);
+    // The fix: a way in is offered instead of the loop.
+    expect(find.text('Set up PIN'), findsOneWidget);
+  });
+
+  testWidgets('v1.1.9: vault add flow end-to-end via the real form',
+      (tester) async {
+    // Box opening inside a testWidgets body hangs in this sandbox
+    // (file header note) — runAsync is the v1.1.4-proven fix.
+    late final Box box;
+    await tester.runAsync(() async {
+      box = await Hive.openBox('vault_form_test_box');
+      VaultService.useBoxForTest(box);
+    });
+    await tester.pumpWidget(
+        const MaterialApp(
+            home: Scaffold(
+                body: SingleChildScrollView(child: VaultForm()))));
+    await tester.pumpAndSettle();
+    // Disabled-save hint: empty form must SAY what is missing,
+    // not just sit greyed out looking broken.
+    expect(find.text('Title aur password zaroori hain'), findsOneWidget);
+    await tester.enterText(
+        find.widgetWithText(TextField, 'e.g. Gmail, Meezan App'),
+        'My Gmail');
+    await tester.enterText(
+        find.widgetWithText(TextField, 'Password'), 'Secret123!');
+    await tester.pumpAndSettle();
+    expect(find.text('Title aur password zaroori hain'), findsNothing);
+    await tester.ensureVisible(find.text('Save Password'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save Password'));
+    await tester.pumpAndSettle();
+    final saved = VaultService.entries
+        .where((e) => e.title == 'My Gmail')
+        .toList();
+    expect(saved.length, 1);
+    expect(saved.first.password, 'Secret123!');
+    expect(Store.changes.value, greaterThan(0));
+  });
+
+  test('v1.1.9: vault save when not ready fails loudly, not silently',
+      () async {
+    VaultService.resetForTest();
+    expect(VaultService.ready, isFalse);
+    await expectLater(
+      VaultService.save(VaultEntry(
+          id: 'x', title: 't', updatedAtMs: 0)),
+      throwsStateError,
+    );
+    // Hygiene: restore a usable box for any later test.
+    final box = await Hive.openBox('vault_restore_test_box');
+    VaultService.useBoxForTest(box);
+  });
+
+  test('v1.1.9: AI suggestion prompt, parse, echo-strip, no-key', () {
+    final body = aiSuggestRequestBody('Aaj ka din acha tha',
+        'llama-3.1-8b-instant');
+    expect(body['model'], 'llama-3.1-8b-instant');
+    final messages = body['messages'] as List;
+    expect((messages[1] as Map)['content'], 'Aaj ka din acha tha');
+    // Normal continuation.
+    expect(
+      aiSuggestParseResponse({
+        'choices': [
+          {
+            'message': {'content': ' aur main ne kaafi kuch seekha.'}
+          }
+        ]
+      }, 'Aaj ka din acha tha'),
+      'aur main ne kaafi kuch seekha.',
+    );
+    // Model echoes the user's text first: strip the echo.
+    expect(
+      aiSuggestParseResponse({
+        'choices': [
+          {
+            'message': {
+              'content': 'Aaj ka din acha tha aur sab kuch theek raha.'
+            }
+          }
+        ]
+      }, 'Aaj ka din acha tha'),
+      'aur sab kuch theek raha.',
+    );
+    // Empty / malformed responses yield no suggestion, never a crash.
+    expect(aiSuggestParseResponse({'choices': []}, 'hello world'), isNull);
+    expect(aiSuggestParseResponse(null, 'hello world'), isNull);
+  });
+
+  test('v1.1.9: AI suggest returns null without a key and on failure',
+      () async {
+    var calls = 0;
+    final service = AiSuggestService(post: (_, _, _) async {
+      calls++;
+      return {
+        'choices': [
+          {'message': {'content': 'continuation here'}}
+        ]
+      };
+    });
+    const cfg = AiSuggestConfig(
+        endpoint: 'https://example.invalid/v1/chat/completions',
+        model: 'test-model',
+        apiKey: 'key-123');
+    // Too little text: no network call at all.
+    expect(await service.suggest('ab', config: cfg), isNull);
+    expect(calls, 0);
+    // Real text with a key: the fake post is used, never the net.
+    expect(await service.suggest('Aaj ka din', config: cfg),
+        'continuation here');
+    expect(calls, 1);
+    // Failing post yields no suggestion, never throws.
+    final failing = AiSuggestService(post: (_, _, _) async => null);
+    expect(await failing.suggest('Aaj ka din', config: cfg), isNull);
+  });
+
+  test('v1.1.9: AI suggester debounces rapid typing to one call',
+      () async {
+    var calls = 0;
+    String? delivered;
+    const cfg = AiSuggestConfig(
+        endpoint: 'https://example.invalid/v1/chat/completions',
+        model: 'test-model',
+        apiKey: 'key-123');
+    final suggester = AiSuggester(
+      service: AiSuggestService(post: (_, _, _) async {
+        calls++;
+        return {
+          'choices': [
+            {'message': {'content': 'suggested ending'}}
+          ]
+        };
+      }),
+      debounce: const Duration(milliseconds: 10),
+      config: cfg,
+    );
+    // Two rapid requests: only the latest text may fire one post.
+    suggester.request('hello world', (s) => delivered = s);
+    suggester.request('hello world again', (s) => delivered = s);
+    await Future.delayed(const Duration(milliseconds: 80));
+    expect(calls, 1);
+    expect(delivered, 'suggested ending');
+    suggester.dispose();
+  });
+
+  test('v1.1.9: launcher icon assets present at all densities', () {
+    for (final d in ['mdpi', 'hdpi', 'xhdpi', 'xxhdpi', 'xxxhdpi']) {
+      for (final f in [
+        'ic_launcher.png',
+        'ic_launcher_foreground.png',
+        'ic_launcher_round.png'
+      ]) {
+        expect(
+          File('android/app/src/main/res/mipmap-$d/$f').existsSync(),
+          isTrue,
+          reason: 'missing mipmap-$d/$f',
+        );
+      }
+    }
+    expect(File('assets/app_icon_source.png').existsSync(), isTrue);
+    expect(File('assets/images/app_icon.png').existsSync(), isTrue);
   });
 }

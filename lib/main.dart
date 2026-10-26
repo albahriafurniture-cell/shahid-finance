@@ -6,7 +6,6 @@ import 'services/vault_service.dart';
 import 'theme.dart';
 import 'widgets/common.dart';
 import 'widgets/dock.dart';
-import 'screens/add_transaction.dart';
 import 'screens/diary.dart';
 import 'screens/home.dart';
 import 'screens/onboarding.dart';
@@ -112,9 +111,9 @@ class _GateState extends State<Gate> {
 }
 
 /// Main shell: 6 tabs (Home, History, Vault, Diary, Reports,
-/// Profile) + the floating dock (which owns its FAB fan).
-/// v1.1.7: Vault + Diary tabs added; the dock scrolls each side
-/// group so 6 tabs fit a 360dp screen without overlap.
+/// Profile) + the floating dock (a plain scrollable tab row since
+/// v1.1.9 — the centre + FAB fan was removed at the user's order;
+/// Add Income/Expense live on the big Home buttons).
 /// ORDER 1 fix (v1.1.1): the tab content sits inside SafeArea(top) so no
 /// tab header ever draws under the Android status bar again — the
 /// aurora background stays full-bleed behind it.
@@ -127,12 +126,6 @@ class MainShell extends StatefulWidget {
 
 class _MainShellState extends State<MainShell> {
   int _tab = 0;
-
-  void _pushAdd({required bool income}) {
-    Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => AddTransactionScreen(initialIncome: income),
-    ));
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -161,8 +154,6 @@ class _MainShellState extends State<MainShell> {
             child: FloatingDock(
               currentIndex: _tab,
               onTab: (i) => setState(() => _tab = i),
-              onAddIncome: () => _pushAdd(income: true),
-              onAddExpense: () => _pushAdd(income: false),
             ),
           ),
         ],

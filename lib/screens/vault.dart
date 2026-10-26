@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../data/store.dart';
+import '../screens/pin_lock.dart';
 import '../services/auth_gate.dart';
+import '../services/pin_service.dart';
 import '../services/vault_service.dart';
 import '../theme.dart';
 import '../utils/password_tools.dart';
@@ -26,6 +28,11 @@ class VaultScreen extends StatefulWidget {
 class _VaultScreenState extends State<VaultScreen> {
   bool _authed = false;
   bool _authAttempted = false;
+  // v1.1.9: two distinct dead-ends the old locked screen hid:
+  // _needsSetup = auth can never succeed (no biometric, no app PIN);
+  // _vaultBroken = the encrypted box never opened (init error).
+  bool _needsSetup = false;
+  bool _vaultBroken = false;
   String _query = '';
   String _category = 'All';
   bool _favouritesOnly = false;
@@ -42,10 +49,44 @@ class _VaultScreenState extends State<VaultScreen> {
   Future<void> _unlock() async {
     final ok = await AuthGate.require(context);
     if (!mounted) return;
+    var needsSetup = false;
+    var vaultBroken = false;
+    if (!ok) {
+      // Distinguish "vault never opened" from "auth failed": the
+      // first needs a vault retry, the second a way in.
+      vaultBroken = !VaultService.ready && VaultService.initError != null;
+      if (!vaultBroken) {
+        needsSetup = !PinService.hasPin &&
+            !(await BiometricService.isAvailable());
+      }
+    }
     setState(() {
       _authed = ok;
       _authAttempted = true;
+      _needsSetup = needsSetup;
+      _vaultBroken = vaultBroken;
     });
+  }
+
+  /// The old screen was a dead end when no biometric/PIN existed:
+  /// "Unlock vault" just failed again with a disappearing snackbar.
+  /// Offer PIN setup right here, then retry the unlock.
+  Future<void> _setupPin() async {
+    final ok = await Navigator.of(context).push<bool>(MaterialPageRoute(
+      builder: (_) => const PinLockScreen(mode: PinMode.set),
+    ));
+    if (!mounted) return;
+    if (ok == true) {
+      setState(() => _needsSetup = false);
+      await _unlock();
+    }
+  }
+
+  Future<void> _retryVault() async {
+    await VaultService.init();
+    if (!mounted) return;
+    setState(() => _vaultBroken = false);
+    await _unlock();
   }
 
   @override
@@ -86,18 +127,52 @@ class _VaultScreenState extends State<VaultScreen> {
                   Expanded(
                     child: Padding(
                       padding: const EdgeInsets.all(20),
-                      child: Container(
-                        decoration: cardDecoration(),
-                        child: EmptyState(
-                          icon: Icons.lock_outline,
-                          title: 'Vault locked',
-                          body: _authAttempted
-                              ? 'Unlock with your fingerprint or PIN to see your passwords. They never leave this phone.'
-                              : 'Unlocking…',
-                          actionLabel:
-                              _authAttempted ? 'Unlock vault' : null,
-                          onAction: _authAttempted ? _unlock : null,
-                        ),
+                      child: Column(
+                        children: [
+                          Expanded(
+                            child: Container(
+                              decoration: cardDecoration(),
+                              child: EmptyState(
+                                icon: Icons.lock_outline,
+                                title: _vaultBroken
+                                    ? 'Vault could not open'
+                                    : 'Vault locked',
+                                body: _vaultBroken
+                                    ? 'The encrypted vault failed to open (${VaultService.initError ?? 'unknown error'}). Your saved passwords are untouched — retry opening it.'
+                                    : _authAttempted
+                                        ? 'Unlock with your fingerprint or PIN to see your passwords. They never leave this phone.'
+                                        : 'Unlocking…',
+                                actionLabel: _authAttempted
+                                    ? (_vaultBroken
+                                        ? 'Retry vault'
+                                        : 'Unlock vault')
+                                    : null,
+                                onAction: _authAttempted
+                                    ? (_vaultBroken
+                                        ? _retryVault
+                                        : _unlock)
+                                    : null,
+                              ),
+                            ),
+                          ),
+                          // Dead-end fix: with no biometric and no
+                          // PIN, "Unlock" can never succeed — offer
+                          // PIN setup instead of looping forever.
+                          if (_needsSetup) ...[
+                            const SizedBox(height: 12),
+                            PrimaryButton(
+                              label: 'Set up PIN',
+                              onTap: _setupPin,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'No fingerprint or PIN is set up yet, so the vault has no way to unlock. Setting a PIN takes a minute.',
+                              textAlign: TextAlign.center,
+                              style: AppText.caption.copyWith(
+                                  color: AppColors.inkTertiary),
+                            ),
+                          ],
+                        ],
                       ),
                     ),
                   )
@@ -549,22 +624,22 @@ class _VaultScreenState extends State<VaultScreen> {
     showAppSheet<void>(
       context: context,
       title: existing == null ? 'Add Password' : 'Edit Password',
-      child: _VaultForm(existing: existing, prefillSite: prefillSite),
+      child: VaultForm(existing: existing, prefillSite: prefillSite),
     );
   }
 }
 
 /// Add / edit form with generator + strength meter.
-class _VaultForm extends StatefulWidget {
+class VaultForm extends StatefulWidget {
   final VaultEntry? existing;
   final SiteInfo? prefillSite;
-  const _VaultForm({this.existing, this.prefillSite});
+  const VaultForm({super.key, this.existing, this.prefillSite});
 
   @override
-  State<_VaultForm> createState() => _VaultFormState();
+  State<VaultForm> createState() => VaultFormState();
 }
 
-class _VaultFormState extends State<_VaultForm> {
+class VaultFormState extends State<VaultForm> {
   late final TextEditingController _titleCtrl;
   late final TextEditingController _userCtrl;
   late final TextEditingController _passCtrl;
@@ -574,6 +649,9 @@ class _VaultFormState extends State<_VaultForm> {
   late bool _favourite;
   late bool _customSite;
   bool _showPassword = false;
+  // v1.1.9: a failed save used to be a silent no-op (StateError
+  // from VaultService.save propagated nowhere visible). Show it.
+  String? _saveError;
 
   @override
   void initState() {
@@ -612,6 +690,7 @@ class _VaultFormState extends State<_VaultForm> {
 
   Future<void> _save() async {
     if (!_valid) return;
+    setState(() => _saveError = null);
     final now = DateTime.now().millisecondsSinceEpoch;
     final entry = VaultEntry(
       id: widget.existing?.id ?? newId(),
@@ -624,11 +703,30 @@ class _VaultFormState extends State<_VaultForm> {
       favourite: _favourite,
       updatedAtMs: now,
     );
-    await VaultService.save(entry);
+    try {
+      await VaultService.save(entry);
+    } catch (e) {
+      if (!mounted) return;
+      // Never a silent no-op again: show exactly why it failed,
+      // and offer a vault retry when the box simply never opened.
+      setState(() => _saveError = VaultService.ready
+          ? 'Could not save: $e'
+          : 'Vault is not open yet — it failed to open at startup. Retry below, then save again.');
+      appSnack(context, 'Password NOT saved');
+      return;
+    }
     if (!mounted) return;
     Navigator.of(context).pop();
     appSnack(context,
         widget.existing == null ? 'Password saved' : 'Password updated');
+  }
+
+  Future<void> _retryVault() async {
+    await VaultService.init();
+    if (!mounted) return;
+    setState(() => _saveError = VaultService.ready
+        ? null
+        : 'Vault is still not open: ${VaultService.initError ?? 'unknown error'}');
   }
 
   Future<void> _delete() async {
@@ -896,6 +994,29 @@ class _VaultFormState extends State<_VaultForm> {
               : 'Save Changes',
           onTap: _valid ? _save : null,
         ),
+        // A greyed Save with no explanation reads as "broken" —
+        // say plainly what is missing.
+        if (!_valid) ...[
+          const SizedBox(height: 8),
+          Text('Title aur password zaroori hain',
+              style: AppText.caption.copyWith(
+                  color: AppColors.inkTertiary)),
+        ],
+        if (_saveError != null) ...[
+          const SizedBox(height: 8),
+          Text(_saveError!,
+              style: AppText.caption.copyWith(color: AppColors.expense)),
+          if (!VaultService.ready) ...[
+            const SizedBox(height: 4),
+            TextButton(
+              onPressed: _retryVault,
+              child: Text('Retry vault',
+                  style: AppText.body.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.brand)),
+            ),
+          ],
+        ],
         if (widget.existing != null) ...[
           const SizedBox(height: 8),
           TextButton(

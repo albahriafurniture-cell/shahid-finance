@@ -78,6 +78,12 @@ class VaultService {
   /// Test seam: inject an already-opened (plain, in-test) box.
   static void useBoxForTest(Box box) => _box = box;
 
+  /// Test seam: simulate a vault that never opened (init failed).
+  static void resetForTest() {
+    _box = null;
+    initError = null;
+  }
+
   static Future<void> init() async {
     try {
       var encoded = await _storage.read(key: _keyName);

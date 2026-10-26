@@ -4,30 +4,27 @@ import 'package:flutter/material.dart';
 
 import '../theme.dart';
 
-/// v1.1.7: floating bottom navigation with a scrollable tab row.
+/// v1.1.9: floating bottom navigation as a plain scrollable tab row.
 ///
-/// Six tabs no longer fit a 360dp screen without cramping, so each
-/// side of the centre FAB is its own horizontal scroll group:
-/// left = Home, History, Password Manager; right = Diary,
-/// Reports, Profile. The FAB stays fixed dead-centre over its 64dp
-/// slot, so a tab can NEVER slide under it — the v1.1.1 overlap bug
-/// cannot return. Selecting a tab scrolls its side group until the
-/// tab is fully visible (scroll-to-selected).
+/// The centre + (FAB) button and its Income/Expense fan were REMOVED
+/// at the user's explicit order (2026-10-26): no income/expense
+/// entry path is lost, because Home already has big Add Income /
+/// Add Expense buttons (lib/screens/home.dart). The dock is now one
+/// horizontally scrollable row of 6 tabs, so no tab can overlap
+/// another — the v1.1.1 overlap bug cannot return. Selecting a tab
+/// scrolls the row until the tab is fully visible
+/// (scroll-to-selected).
 ///
-/// Tab order: 0 Home, 1 History, 2 Password Manager, 3 Diary, 4 Reports,
-/// 5 Profile. The centre + FAB fan behaviour is unchanged.
+/// Tab order: 0 Home, 1 History, 2 Password Manager, 3 Diary,
+/// 4 Reports, 5 Profile.
 class FloatingDock extends StatefulWidget {
   final int currentIndex;
   final ValueChanged<int> onTab;
-  final VoidCallback onAddIncome;
-  final VoidCallback onAddExpense;
 
   const FloatingDock({
     super.key,
     required this.currentIndex,
     required this.onTab,
-    required this.onAddIncome,
-    required this.onAddExpense,
   });
 
   @override
@@ -71,25 +68,19 @@ class _DockTab {
       [this.width = dockTabWidth]);
 }
 
-const _leftTabs = [
+const _allTabs = [
   _DockTab(0, Icons.home_outlined, Icons.home, 'Home'),
   _DockTab(1, Icons.receipt_long_outlined, Icons.receipt_long, 'History'),
   // Wider tab so the full "Password Manager" label fits on one line.
   _DockTab(2, Icons.lock_outlined, Icons.lock, 'Password Manager', 108),
-];
-
-const _rightTabs = [
   _DockTab(3, Icons.book_outlined, Icons.book, 'Diary'),
   _DockTab(4, Icons.bar_chart_outlined, Icons.bar_chart, 'Reports'),
   _DockTab(5, Icons.person_outline, Icons.person, 'Profile'),
 ];
 
 class _FloatingDockState extends State<FloatingDock> {
-  bool _fanOpen = false;
-  final _leftController = ScrollController();
-  final _rightController = ScrollController();
-  double _leftViewport = 0;
-  double _rightViewport = 0;
+  final _controller = ScrollController();
+  double _viewport = 0;
 
   @override
   void initState() {
@@ -109,235 +100,60 @@ class _FloatingDockState extends State<FloatingDock> {
 
   @override
   void dispose() {
-    _leftController.dispose();
-    _rightController.dispose();
+    _controller.dispose();
     super.dispose();
   }
 
   void _scrollToCurrent({required bool animate}) {
-    final index = widget.currentIndex;
-    ScrollController? controller;
-    List<_DockTab> tabs;
-    double viewport;
-    int localIndex;
-    if (index < _leftTabs.length) {
-      controller = _leftController;
-      tabs = _leftTabs;
-      viewport = _leftViewport;
-      localIndex = index;
-    } else {
-      controller = _rightController;
-      tabs = _rightTabs;
-      viewport = _rightViewport;
-      localIndex = index - _leftTabs.length;
-    }
-    if (!controller.hasClients || viewport <= 0) return;
+    if (!_controller.hasClients || _viewport <= 0) return;
     final target = dockScrollOffsetForItem(
-      itemIndex: localIndex,
-      itemWidths: tabs.map((t) => t.width).toList(),
-      viewportWidth: viewport,
-      currentOffset: controller.offset,
+      itemIndex: widget.currentIndex,
+      itemWidths: _allTabs.map((t) => t.width).toList(),
+      viewportWidth: _viewport,
+      currentOffset: _controller.offset,
     );
-    if ((target - controller.offset).abs() < 0.5) return;
+    if ((target - _controller.offset).abs() < 0.5) return;
     if (animate) {
-      controller.animateTo(
+      _controller.animateTo(
         target,
         duration: const Duration(milliseconds: 250),
         curve: Curves.easeOut,
       );
     } else {
-      controller.jumpTo(target);
+      _controller.jumpTo(target);
     }
-  }
-
-  void _closeFan() {
-    if (_fanOpen) setState(() => _fanOpen = false);
   }
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      clipBehavior: Clip.none,
-      alignment: Alignment.bottomCenter,
-      children: [
-        if (_fanOpen)
-          Positioned.fill(
-            child: GestureDetector(
-              onTap: _closeFan,
-              behavior: HitTestBehavior.opaque,
-              child: Container(color: Colors.transparent),
-            ),
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(AppRadius.lg),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+        child: Container(
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          height: 68,
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(AppRadius.lg),
+            border: Border.all(color: AppColors.hairline),
+            boxShadow: AppShadows.raised,
           ),
-        // Fan mini-actions (v1.1.3: labelled header so the
-        // Income/Expense choice is unmistakable at a glance).
-        Positioned(
-          bottom: 92,
-          child: AnimatedOpacity(
-            opacity: _fanOpen ? 1 : 0,
-            duration: const Duration(milliseconds: 180),
-            child: IgnorePointer(
-              ignoring: !_fanOpen,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: AppColors.surface,
-                      borderRadius:
-                          BorderRadius.circular(AppRadius.pill),
-                      border: Border.all(color: AppColors.hairline),
-                      boxShadow: AppShadows.card,
-                    ),
-                    child: Text('Income or expense?',
-                        style: AppText.label.copyWith(
-                            fontSize: 12, color: AppColors.ink)),
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _fanAction(
-                        icon: Icons.south_west,
-                        label: 'Add Income',
-                        tint: AppColors.accentTint,
-                        color: AppColors.brandDeep,
-                        onTap: () {
-                          _closeFan();
-                          widget.onAddIncome();
-                        },
-                      ),
-                      const SizedBox(width: 16),
-                      _fanAction(
-                        icon: Icons.north_east,
-                        label: 'Add Expense',
-                        tint: AppColors.expenseTint,
-                        color: AppColors.expense,
-                        onTap: () {
-                          _closeFan();
-                          widget.onAddExpense();
-                        },
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              _viewport = constraints.maxWidth;
+              return SingleChildScrollView(
+                controller: _controller,
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    for (final t in _allTabs) _tab(t),
+                  ],
+                ),
+              );
+            },
           ),
         ),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(AppRadius.lg),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-            child: Container(
-              margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-              height: 68,
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(AppRadius.lg),
-                border: Border.all(color: AppColors.hairline),
-                boxShadow: AppShadows.raised,
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        _leftViewport = constraints.maxWidth;
-                        return SingleChildScrollView(
-                          controller: _leftController,
-                          scrollDirection: Axis.horizontal,
-                          child: Row(
-                            children: [
-                              for (final t in _leftTabs) _tab(t),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 64), // FAB slot — centred
-                  Expanded(
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        _rightViewport = constraints.maxWidth;
-                        return SingleChildScrollView(
-                          controller: _rightController,
-                          scrollDirection: Axis.horizontal,
-                          child: Row(
-                            children: [
-                              for (final t in _rightTabs) _tab(t),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-        Positioned(
-          bottom: 38,
-          child: GestureDetector(
-            onTap: () => setState(() => _fanOpen = !_fanOpen),
-            child: Container(
-              width: 56,
-              height: 56,
-              decoration: const BoxDecoration(
-                color: AppColors.accent,
-                shape: BoxShape.circle,
-                boxShadow: AppShadows.fab,
-              ),
-              child: AnimatedRotation(
-                turns: _fanOpen ? 0.125 : 0,
-                duration: const Duration(milliseconds: 200),
-                child: const Icon(Icons.add, color: AppColors.canvas, size: 28),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _fanAction({
-    required IconData icon,
-    required String label,
-    required Color tint,
-    required Color color,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: tint,
-              shape: BoxShape.circle,
-              border: Border.all(color: AppColors.hairline),
-              boxShadow: AppShadows.card,
-            ),
-            child: Icon(icon, size: 22, color: color),
-          ),
-          const SizedBox(height: 6),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(AppRadius.pill),
-              border: Border.all(color: AppColors.hairline),
-            ),
-            child: Text(label,
-                style: AppText.label.copyWith(fontSize: 11, color: color)),
-          ),
-        ],
       ),
     );
   }
@@ -347,10 +163,7 @@ class _FloatingDockState extends State<FloatingDock> {
     return SizedBox(
       width: tab.width,
       child: GestureDetector(
-        onTap: () {
-          _closeFan();
-          widget.onTab(tab.index);
-        },
+        onTap: () => widget.onTab(tab.index),
         behavior: HitTestBehavior.opaque,
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,

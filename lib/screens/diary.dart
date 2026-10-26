@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../data/models.dart';
 import '../data/store.dart';
+import '../services/ai_suggest.dart';
 import '../theme.dart';
 import '../utils/format.dart';
 import '../widgets/common.dart';
@@ -622,6 +623,10 @@ class _JournalFormState extends State<_JournalForm> {
   late final TextEditingController _textCtrl;
   late String _mood;
   late DateTime _date;
+  // v1.1.9: ghost AI continuation suggestions (never auto-inserted).
+  final AiSuggester _suggester = AiSuggester();
+  String? _suggestion;
+  bool _aiReady = false;
 
   @override
   void initState() {
@@ -633,13 +638,56 @@ class _JournalFormState extends State<_JournalForm> {
     _date = ex != null
         ? DateTime.fromMillisecondsSinceEpoch(ex.dateMs)
         : DateTime.now();
+    // No key yet = no suggestions, just the setup card below.
+    AiSuggestService.loadConfig().then((cfg) {
+      if (!mounted) return;
+      setState(() => _aiReady = cfg != null);
+    });
   }
 
   @override
   void dispose() {
+    _suggester.dispose();
     _titleCtrl.dispose();
     _textCtrl.dispose();
     super.dispose();
+  }
+
+  void _onEntryChanged(String text) {
+    setState(() => _suggestion = null);
+    if (!_aiReady) return;
+    _suggester.request(text, (s) {
+      if (!mounted) return;
+      // Only show a suggestion for the text still on screen.
+      setState(() => _suggestion = s);
+    });
+  }
+
+  void _acceptSuggestion() {
+    final s = _suggestion;
+    if (s == null) return;
+    var text = _textCtrl.text;
+    final needsSpace = text.isNotEmpty &&
+        !text.endsWith(' ') &&
+        !text.endsWith('\n') &&
+        !s.startsWith(' ') &&
+        !'.,!?;:)'.contains(s[0]);
+    text = text + (needsSpace ? ' ' : '') + s;
+    _textCtrl.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+    setState(() => _suggestion = null);
+  }
+
+  Future<void> _openAiSetup() async {
+    final saved = await showAppSheet<bool>(
+      context: context,
+      title: 'AI writing help',
+      child: const _AiSetupForm(),
+    );
+    if (!mounted) return;
+    if (saved == true) setState(() => _aiReady = true);
   }
 
   Future<void> _save() async {
@@ -738,8 +786,92 @@ class _JournalFormState extends State<_JournalForm> {
             ),
           ),
           style: AppText.body,
-          onChanged: (_) => setState(() {}),
+          onChanged: _onEntryChanged,
         ),
+        const SizedBox(height: 12),
+        // v1.1.9: ghost AI suggestion — faint continuation, tap to
+        // accept, ignore it by just continuing to type. Never
+        // auto-inserted, never blocking. Without a key, a setup
+        // card instead (key stays only on this phone).
+        if (_aiReady && _suggestion != null)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: AppColors.surfaceInset,
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              border: Border.all(color: AppColors.hairline),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                GestureDetector(
+                  onTap: _acceptSuggestion,
+                  child: Text(
+                    '✦ ${_suggestion!}',
+                    style: AppText.body.copyWith(
+                      fontStyle: FontStyle.italic,
+                      color: AppColors.inkTertiary,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    GestureDetector(
+                      onTap: _acceptSuggestion,
+                      child: Text('Accept',
+                          style: AppText.label.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.brand)),
+                    ),
+                    const SizedBox(width: 16),
+                    GestureDetector(
+                      onTap: () => setState(() => _suggestion = null),
+                      child: Text('Dismiss',
+                          style: AppText.label.copyWith(
+                              color: AppColors.inkTertiary)),
+                    ),
+                    const Spacer(),
+                    Text('AI suggestion — tap to use',
+                        style: AppText.caption.copyWith(
+                            color: AppColors.inkTertiary)),
+                  ],
+                ),
+              ],
+            ),
+          )
+        else if (!_aiReady)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: AppColors.surfaceInset,
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              border: Border.all(color: AppColors.hairline),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('✦ AI writing help',
+                    style: AppText.bodyStrong),
+                const SizedBox(height: 4),
+                Text(
+                  'Jab aap likhenge to AI aage ki line halki si suggest karega — accept karne par hi lagegi. Is ke liye apni free Groq API key ek dafa yahan lagayen; key sirf isi phone par rehti hai.',
+                  style: AppText.caption.copyWith(
+                      color: AppColors.inkSecondary),
+                ),
+                const SizedBox(height: 8),
+                GestureDetector(
+                  onTap: _openAiSetup,
+                  child: Text('Set up AI →',
+                      style: AppText.label.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.brand)),
+                ),
+              ],
+            ),
+          ),
         const SizedBox(height: 16),
         PrimaryButton(
           label: widget.existing == null ? 'Save Entry' : 'Save Changes',
@@ -1013,4 +1145,109 @@ Widget _sheetField(TextEditingController ctrl, String hint) {
     ),
     style: AppText.body,
   );
+}
+
+/// v1.1.9: AI setup sheet. The key is the user's own free key
+/// (Groq console → API Keys → Create), pasted once here and stored
+/// ONLY in flutter_secure_storage on this phone. No key is bundled,
+/// invented, or ever sent anywhere except the configured endpoint
+/// with the journal text being typed. Endpoint/model are editable
+/// but default to the open model Groq's llama-3.1-8b-instant.
+class _AiSetupForm extends StatefulWidget {
+  const _AiSetupForm();
+
+  @override
+  State<_AiSetupForm> createState() => _AiSetupFormState();
+}
+
+class _AiSetupFormState extends State<_AiSetupForm> {
+  final _endpointCtrl = TextEditingController(text: defaultAiEndpoint);
+  final _modelCtrl = TextEditingController(text: defaultAiModel);
+  final _keyCtrl = TextEditingController();
+  bool _showKey = false;
+  bool _saving = false;
+
+  @override
+  void dispose() {
+    _endpointCtrl.dispose();
+    _modelCtrl.dispose();
+    _keyCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (_keyCtrl.text.trim().isEmpty) return;
+    setState(() => _saving = true);
+    await AiSuggestService.saveConfig(AiSuggestConfig(
+      endpoint: _endpointCtrl.text.trim().isEmpty
+          ? defaultAiEndpoint
+          : _endpointCtrl.text.trim(),
+      model: _modelCtrl.text.trim().isEmpty
+          ? defaultAiModel
+          : _modelCtrl.text.trim(),
+      apiKey: _keyCtrl.text.trim(),
+    ));
+    if (!mounted) return;
+    Navigator.of(context).pop(true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Free Groq account banayen (console.groq.com), API Keys me ja kar key banayen, aur yahan paste kar den. Key sirf isi phone par mehfooz rehti hai — na cloud backup me jati hai, na code me.',
+          style: AppText.body.copyWith(color: AppColors.inkSecondary),
+        ),
+        const SizedBox(height: 16),
+        _sheetLabel('API key'),
+        TextField(
+          controller: _keyCtrl,
+          obscureText: !_showKey,
+          decoration: InputDecoration(
+            hintText: 'gsk_…',
+            hintStyle:
+                AppText.body.copyWith(color: AppColors.inkTertiary),
+            filled: true,
+            fillColor: AppColors.surfaceInset,
+            contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16, vertical: 16),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              borderSide: BorderSide.none,
+            ),
+            suffixIcon: IconButton(
+              onPressed: () => setState(() => _showKey = !_showKey),
+              icon: Icon(
+                _showKey
+                    ? Icons.visibility_off_outlined
+                    : Icons.visibility_outlined,
+                color: AppColors.inkSecondary,
+              ),
+            ),
+          ),
+          style: AppText.body.copyWith(fontFamily: 'monospace'),
+          onChanged: (_) => setState(() {}),
+        ),
+        const SizedBox(height: 16),
+        _sheetLabel('Endpoint (optional)'),
+        _sheetField(_endpointCtrl, defaultAiEndpoint),
+        const SizedBox(height: 16),
+        _sheetLabel('Model (optional)'),
+        _sheetField(_modelCtrl, defaultAiModel),
+        const SizedBox(height: 16),
+        PrimaryButton(
+          label: _saving ? 'Saving…' : 'Save key',
+          onTap: _keyCtrl.text.trim().isEmpty || _saving ? null : _save,
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Sirf journal ka woh text AI ko bheja jata hai jo aap us waqt likh rahe hain. Vault aur finance ka data kabhi nahi bheja jata.',
+          style: AppText.caption.copyWith(color: AppColors.inkTertiary),
+        ),
+      ],
+    );
+  }
 }
