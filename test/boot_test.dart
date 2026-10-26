@@ -802,7 +802,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Home'), findsOneWidget);
     expect(find.text('History'), findsOneWidget);
-    expect(find.text('Vault'), findsOneWidget);
+    expect(find.text('Password Manager'), findsOneWidget);
     expect(find.text('Diary'), findsOneWidget);
     expect(find.text('Reports'), findsOneWidget);
     expect(find.text('Profile'), findsOneWidget);
@@ -813,14 +813,13 @@ void main() {
 
   test('v1.1.7: dock scroll-to-selected offset helper', () {
     // 3 items of 64dp, viewport 132dp (360dp screen, two groups).
-    const itemWidth = 64.0;
+    const itemWidths = [64.0, 64.0, 64.0];
     const viewport = 132.0;
     // Item 0 already visible at offset 0.
     expect(
         dockScrollOffsetForItem(
           itemIndex: 0,
-          itemCount: 3,
-          itemWidth: itemWidth,
+          itemWidths: itemWidths,
           viewportWidth: viewport,
           currentOffset: 0,
         ),
@@ -829,8 +828,7 @@ void main() {
     expect(
         dockScrollOffsetForItem(
           itemIndex: 2,
-          itemCount: 3,
-          itemWidth: itemWidth,
+          itemWidths: itemWidths,
           viewportWidth: viewport,
           currentOffset: 0,
         ),
@@ -839,8 +837,7 @@ void main() {
     expect(
         dockScrollOffsetForItem(
           itemIndex: 0,
-          itemCount: 3,
-          itemWidth: itemWidth,
+          itemWidths: itemWidths,
           viewportWidth: viewport,
           currentOffset: 60,
         ),
@@ -849,8 +846,7 @@ void main() {
     expect(
         dockScrollOffsetForItem(
           itemIndex: 2,
-          itemCount: 3,
-          itemWidth: itemWidth,
+          itemWidths: itemWidths,
           viewportWidth: 400,
           currentOffset: 0,
         ),

@@ -8,13 +8,13 @@ import '../theme.dart';
 ///
 /// Six tabs no longer fit a 360dp screen without cramping, so each
 /// side of the centre FAB is its own horizontal scroll group:
-/// left = Home, History, Vault (Password Manager); right = Diary,
+/// left = Home, History, Password Manager; right = Diary,
 /// Reports, Profile. The FAB stays fixed dead-centre over its 64dp
 /// slot, so a tab can NEVER slide under it — the v1.1.1 overlap bug
 /// cannot return. Selecting a tab scrolls its side group until the
 /// tab is fully visible (scroll-to-selected).
 ///
-/// Tab order: 0 Home, 1 History, 2 Vault, 3 Diary, 4 Reports,
+/// Tab order: 0 Home, 1 History, 2 Password Manager, 3 Diary, 4 Reports,
 /// 5 Profile. The centre + FAB fan behaviour is unchanged.
 class FloatingDock extends StatefulWidget {
   final int currentIndex;
@@ -38,19 +38,20 @@ class FloatingDock extends StatefulWidget {
 const double dockTabWidth = 64;
 
 /// Pure scroll target: smallest offset that makes [itemIndex] fully
-/// visible in a viewport of [viewportWidth], given [currentOffset].
-/// Unit-tested; the widget only animates to what this returns.
+/// visible in a viewport of [viewportWidth], given [currentOffset]
+/// and the per-tab [itemWidths]. Unit-tested; the widget only
+/// animates to what this returns.
 double dockScrollOffsetForItem({
   required int itemIndex,
-  required int itemCount,
-  required double itemWidth,
+  required List<double> itemWidths,
   required double viewportWidth,
   required double currentOffset,
 }) {
-  final totalWidth = itemCount * itemWidth;
+  final totalWidth = itemWidths.fold(0.0, (a, w) => a + w);
   final maxOffset = (totalWidth - viewportWidth).clamp(0.0, totalWidth);
-  final itemStart = itemIndex * itemWidth;
-  final itemEnd = itemStart + itemWidth;
+  final itemStart =
+      itemWidths.sublist(0, itemIndex).fold(0.0, (a, w) => a + w);
+  final itemEnd = itemStart + itemWidths[itemIndex];
   double target = currentOffset;
   if (itemStart < currentOffset) {
     target = itemStart;
@@ -65,13 +66,16 @@ class _DockTab {
   final IconData icon;
   final IconData iconFilled;
   final String label;
-  const _DockTab(this.index, this.icon, this.iconFilled, this.label);
+  final double width;
+  const _DockTab(this.index, this.icon, this.iconFilled, this.label,
+      [this.width = dockTabWidth]);
 }
 
 const _leftTabs = [
   _DockTab(0, Icons.home_outlined, Icons.home, 'Home'),
   _DockTab(1, Icons.receipt_long_outlined, Icons.receipt_long, 'History'),
-  _DockTab(2, Icons.lock_outlined, Icons.lock, 'Vault'),
+  // Wider tab so the full "Password Manager" label fits on one line.
+  _DockTab(2, Icons.lock_outlined, Icons.lock, 'Password Manager', 108),
 ];
 
 const _rightTabs = [
@@ -130,8 +134,7 @@ class _FloatingDockState extends State<FloatingDock> {
     if (!controller.hasClients || viewport <= 0) return;
     final target = dockScrollOffsetForItem(
       itemIndex: localIndex,
-      itemCount: tabs.length,
-      itemWidth: dockTabWidth,
+      itemWidths: tabs.map((t) => t.width).toList(),
       viewportWidth: viewport,
       currentOffset: controller.offset,
     );
@@ -342,7 +345,7 @@ class _FloatingDockState extends State<FloatingDock> {
   Widget _tab(_DockTab tab) {
     final selected = widget.currentIndex == tab.index;
     return SizedBox(
-      width: dockTabWidth,
+      width: tab.width,
       child: GestureDetector(
         onTap: () {
           _closeFan();
@@ -370,8 +373,9 @@ class _FloatingDockState extends State<FloatingDock> {
             const SizedBox(height: 2),
             Text(
               tab.label,
+              textAlign: TextAlign.center,
               style: AppText.caption.copyWith(
-                fontSize: 11,
+                fontSize: tab.width > dockTabWidth ? 10 : 11,
                 fontWeight: FontWeight.w600,
                 color: selected
                     ? AppColors.accent
