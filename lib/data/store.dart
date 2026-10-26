@@ -20,6 +20,9 @@ class Store {
   static const loansBox = 'loans';
   static const loanPaymentsBox = 'loan_payments';
   static const goalsBox = 'goals';
+  static const journalBox = 'journal';
+  static const diaryTasksBox = 'diary_tasks';
+  static const lifeGoalsBox = 'life_goals';
 
   static late Box<Wallet> wallets;
   static late Box<MoneyTxn> txns;
@@ -29,6 +32,9 @@ class Store {
   static late Box<Loan> loans;
   static late Box<LoanPayment> loanPayments;
   static late Box<SavingsGoal> goals;
+  static late Box<JournalEntry> journal;
+  static late Box<DiaryTask> diaryTasks;
+  static late Box<LifeGoal> lifeGoals;
 
   /// Bumped on every mutation; screens listen and rebuild.
   static final ValueNotifier<int> changes = ValueNotifier<int>(0);
@@ -50,6 +56,15 @@ class Store {
     }
     if (!Hive.isAdapterRegistered(6)) {
       Hive.registerAdapter(SavingsGoalAdapter());
+    }
+    if (!Hive.isAdapterRegistered(7)) {
+      Hive.registerAdapter(JournalEntryAdapter());
+    }
+    if (!Hive.isAdapterRegistered(8)) {
+      Hive.registerAdapter(DiaryTaskAdapter());
+    }
+    if (!Hive.isAdapterRegistered(9)) {
+      Hive.registerAdapter(LifeGoalAdapter());
     }
     _adaptersRegistered = true;
   }
@@ -83,6 +98,9 @@ class Store {
     loans = await Hive.openBox<Loan>(loansBox);
     loanPayments = await Hive.openBox<LoanPayment>(loanPaymentsBox);
     goals = await Hive.openBox<SavingsGoal>(goalsBox);
+    journal = await Hive.openBox<JournalEntry>(journalBox);
+    diaryTasks = await Hive.openBox<DiaryTask>(diaryTasksBox);
+    lifeGoals = await Hive.openBox<LifeGoal>(lifeGoalsBox);
   }
 
   // ---------------------------------------------------------------- settings
@@ -482,6 +500,160 @@ class Store {
   static int outstandingFor(String direction) =>
       loansFor(direction).fold(0, (s, l) => s + remainingFor(l));
 
+  // ------------------------------------------------------- v1.1.7 loans
+  /// Person key: name matched case-insensitively, trimmed.
+  static String personKey(String name) => name.trim().toLowerCase();
+
+  /// One row of the People view: all loans for one person, both
+  /// directions, with totals split by direction.
+  static List<PersonSummary> peopleSummaries() {
+    final map = <String, PersonSummary>{};
+    for (final loan in allLoans) {
+      final key = personKey(loan.personName);
+      final s = map.putIfAbsent(
+          key, () => PersonSummary(displayName: loan.personName.trim()));
+      s.loanCount++;
+      if (loan.isTaken) {
+        s.takenTotal += loan.principal;
+        s.takenOutstanding += remainingFor(loan);
+      } else {
+        s.givenTotal += loan.principal;
+        s.givenOutstanding += remainingFor(loan);
+      }
+    }
+    final list = map.values.toList();
+    list.sort((a, b) => (b.takenOutstanding + b.givenOutstanding)
+        .compareTo(a.takenOutstanding + a.givenOutstanding));
+    return list;
+  }
+
+  static List<Loan> loansForPerson(String personName) {
+    final key = personKey(personName);
+    return allLoans.where((l) => personKey(l.personName) == key).toList();
+  }
+
+  /// Overdue: an expected date has passed (day granularity) while
+  /// money is still outstanding. Settled loans are never overdue.
+  static bool isOverdue(Loan loan, {DateTime? now}) {
+    if (loan.dueDateMs <= 0 || remainingFor(loan) <= 0) return false;
+    final n = now ?? DateTime.now();
+    final today = DateTime(n.year, n.month, n.day);
+    final due = DateTime.fromMillisecondsSinceEpoch(loan.dueDateMs);
+    return due.isBefore(today);
+  }
+
+  /// Default list order within a direction tab: loans WITH a due date
+  /// first (nearest due first), then loans without one (newest first).
+  static List<Loan> loansSortedByDue(String direction) {
+    final list = loansFor(direction);
+    list.sort((a, b) {
+      final ad = a.dueDateMs > 0;
+      final bd = b.dueDateMs > 0;
+      if (ad && bd) return a.dueDateMs.compareTo(b.dueDateMs);
+      if (ad) return -1;
+      if (bd) return 1;
+      return b.dateMs.compareTo(a.dateMs);
+    });
+    return list;
+  }
+
+  /// Payment timeline for one loan, oldest first, with the running
+  /// remaining balance AFTER each payment (principal − paid so far).
+  static List<PaymentTimelineRow> paymentTimeline(String loanId) {
+    final loan = loans.get(loanId);
+    if (loan == null) return const [];
+    final payments = paymentsFor(loanId).reversed.toList();
+    var paidSoFar = 0;
+    return payments.map((p) {
+      paidSoFar += p.amount;
+      return PaymentTimelineRow(
+        payment: p,
+        remainingAfter: (loan.principal - paidSoFar).clamp(0, loan.principal),
+      );
+    }).toList();
+  }
+
+  // ------------------------------------------------------- v1.1.7 diary
+  /// Diary is a SEPARATE tracker like loans/goals — never touches
+  /// wallets, transactions, income or expense totals.
+  static List<JournalEntry> get allJournal {
+    final list = journal.values.toList();
+    list.sort((a, b) {
+      final d = b.dateMs.compareTo(a.dateMs);
+      return d != 0 ? d : b.updatedAtMs.compareTo(a.updatedAtMs);
+    });
+    return list;
+  }
+
+  static List<JournalEntry> searchJournal(String query) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return allJournal;
+    return allJournal
+        .where((e) =>
+            e.title.toLowerCase().contains(q) ||
+            e.text.toLowerCase().contains(q) ||
+            e.mood.toLowerCase().contains(q))
+        .toList();
+  }
+
+  static Future<void> saveJournal(JournalEntry e) async {
+    await journal.put(e.id, e);
+    bump();
+  }
+
+  static Future<void> deleteJournal(String id) async {
+    await journal.delete(id);
+    bump();
+  }
+
+  static List<DiaryTask> get allDiaryTasks {
+    final list = diaryTasks.values.toList();
+    list.sort((a, b) {
+      if (a.done != b.done) return a.done ? 1 : -1;
+      final ad = a.dueDateMs > 0;
+      final bd = b.dueDateMs > 0;
+      if (ad && bd) return a.dueDateMs.compareTo(b.dueDateMs);
+      if (ad) return -1;
+      if (bd) return 1;
+      return b.createdAtMs.compareTo(a.createdAtMs);
+    });
+    return list;
+  }
+
+  static Future<void> saveDiaryTask(DiaryTask t) async {
+    await diaryTasks.put(t.id, t);
+    bump();
+  }
+
+  static Future<void> toggleDiaryTask(String id) async {
+    final t = diaryTasks.get(id);
+    if (t == null) return;
+    t.done = !t.done;
+    await diaryTasks.put(t.id, t);
+    bump();
+  }
+
+  static Future<void> deleteDiaryTask(String id) async {
+    await diaryTasks.delete(id);
+    bump();
+  }
+
+  static List<LifeGoal> get allLifeGoals {
+    final list = lifeGoals.values.toList();
+    list.sort((a, b) => b.createdAtMs.compareTo(a.createdAtMs));
+    return list;
+  }
+
+  static Future<void> saveLifeGoal(LifeGoal g) async {
+    await lifeGoals.put(g.id, g);
+    bump();
+  }
+
+  static Future<void> deleteLifeGoal(String id) async {
+    await lifeGoals.delete(id);
+    bump();
+  }
+
   static Future<void> saveLoan(Loan loan) async {
     await loans.put(loan.id, loan);
     bump();
@@ -553,6 +725,9 @@ class Store {
       'loans': loans.values.map((l) => l.toJson()).toList(),
       'loanPayments': loanPayments.values.map((p) => p.toJson()).toList(),
       'goals': goals.values.map((g) => g.toJson()).toList(),
+      'journal': journal.values.map((e) => e.toJson()).toList(),
+      'diaryTasks': diaryTasks.values.map((t) => t.toJson()).toList(),
+      'lifeGoals': lifeGoals.values.map((g) => g.toJson()).toList(),
       'settings': {
         for (final k in settings.keys) k as String: settings.get(k),
       },
@@ -567,6 +742,9 @@ class Store {
     await loans.clear();
     await loanPayments.clear();
     await goals.clear();
+    await journal.clear();
+    await diaryTasks.clear();
+    await lifeGoals.clear();
     for (final j in (snap['wallets'] as List? ?? [])) {
       final w = Wallet.fromJson(Map<String, dynamic>.from(j as Map));
       await wallets.put(w.id, w);
@@ -594,6 +772,18 @@ class Store {
     for (final j in (snap['goals'] as List? ?? [])) {
       final g = SavingsGoal.fromJson(Map<String, dynamic>.from(j as Map));
       await goals.put(g.id, g);
+    }
+    for (final j in (snap['journal'] as List? ?? [])) {
+      final e = JournalEntry.fromJson(Map<String, dynamic>.from(j as Map));
+      await journal.put(e.id, e);
+    }
+    for (final j in (snap['diaryTasks'] as List? ?? [])) {
+      final t = DiaryTask.fromJson(Map<String, dynamic>.from(j as Map));
+      await diaryTasks.put(t.id, t);
+    }
+    for (final j in (snap['lifeGoals'] as List? ?? [])) {
+      final g = LifeGoal.fromJson(Map<String, dynamic>.from(j as Map));
+      await lifeGoals.put(g.id, g);
     }
     final savedSettings = snap['settings'];
     if (savedSettings is Map) {
@@ -633,4 +823,28 @@ class Store {
     }
     return sb.toString();
   }
+}
+
+/// v1.1.7: one row of the Loans People view.
+class PersonSummary {
+  final String displayName;
+  int loanCount = 0;
+  int takenTotal = 0;
+  int givenTotal = 0;
+  int takenOutstanding = 0;
+  int givenOutstanding = 0;
+
+  PersonSummary({required this.displayName});
+
+  int get totalOutstanding => takenOutstanding + givenOutstanding;
+}
+
+/// v1.1.7: one row of a loan payment timeline.
+class PaymentTimelineRow {
+  final LoanPayment payment;
+  final int remainingAfter;
+  const PaymentTimelineRow({
+    required this.payment,
+    required this.remainingAfter,
+  });
 }

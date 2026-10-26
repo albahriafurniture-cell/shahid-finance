@@ -19,18 +19,20 @@ class LoansScreen extends StatefulWidget {
   State<LoansScreen> createState() => _LoansScreenState();
 }
 
+enum _LoansView { taken, given, people }
+
 class _LoansScreenState extends State<LoansScreen> {
-  bool _taken = true;
+  _LoansView _view = _LoansView.taken;
+  String? _personFilter;
 
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<int>(
       valueListenable: Store.changes,
       builder: (context, _, _) {
-        final direction = _taken ? 'taken' : 'given';
-        final list = Store.loansFor(direction);
         final takenOut = Store.outstandingFor('taken');
         final givenOut = Store.outstandingFor('given');
+        final people = Store.peopleSummaries();
         return GlassScaffold(
           body: SafeArea(
             child: Column(
@@ -74,28 +76,10 @@ class _LoansScreenState extends State<LoansScreen> {
                       const SizedBox(height: 20),
                       _segmented(),
                       const SizedBox(height: 16),
-                      if (list.isEmpty)
-                        Container(
-                          decoration: cardDecoration(),
-                          child: EmptyState(
-                            icon: Icons.handshake_outlined,
-                            title: _taken
-                                ? 'No loans taken'
-                                : 'No loans given',
-                            body: _taken
-                                ? 'People you borrowed from will appear here, with what is still left to repay.'
-                                : 'People you lent to will appear here, with what they still owe you.',
-                            actionLabel: 'Add a loan',
-                            onAction: () => _openForm(context),
-                          ),
-                        )
+                      if (_view == _LoansView.people)
+                        _peopleBody(context, people)
                       else
-                        GroupCard(
-                          children: [
-                            for (final loan in list)
-                              _loanRow(context, loan),
-                          ],
-                        ),
+                        _directionBody(context),
                     ],
                   ),
                 ),
@@ -115,6 +99,180 @@ class _LoansScreenState extends State<LoansScreen> {
     );
   }
 
+  /// Taken / Given tab body: due-date sorted list, or a single
+  /// person's loans when drilled in from the People view.
+  Widget _directionBody(BuildContext context) {
+    final direction = _view == _LoansView.taken ? 'taken' : 'given';
+    final list = _personFilter != null
+        ? Store.loansForPerson(_personFilter!)
+            .where((l) => l.direction == direction)
+            .toList()
+        : Store.loansSortedByDue(direction);
+    final emptyTitle = _personFilter != null
+        ? 'No ${direction == 'taken' ? 'taken' : 'given'} loans'
+        : (direction == 'taken' ? 'No loans taken' : 'No loans given');
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (_personFilter != null) ...[
+          InkWell(
+            onTap: () => setState(() => _personFilter = null),
+            borderRadius: BorderRadius.circular(AppRadius.pill),
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppColors.accentTint,
+                borderRadius: BorderRadius.circular(AppRadius.pill),
+                border: Border.all(color: AppColors.hairline),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.arrow_back,
+                      size: 16, color: AppColors.brand),
+                  const SizedBox(width: 6),
+                  Text('All people · $_personFilter',
+                      style: AppText.label
+                          .copyWith(fontWeight: FontWeight.w700)),
+                  const SizedBox(width: 6),
+                  const Icon(Icons.close,
+                      size: 16, color: AppColors.inkSecondary),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+        ],
+        if (list.isEmpty)
+          Container(
+            decoration: cardDecoration(),
+            child: EmptyState(
+              icon: Icons.handshake_outlined,
+              title: emptyTitle,
+              body: _personFilter != null
+                  ? '$_personFilter has no $direction loans yet.'
+                  : (direction == 'taken'
+                      ? 'People you borrowed from will appear here, with what is still left to repay.'
+                      : 'People you lent to will appear here, with what they still owe you.'),
+              actionLabel: 'Add a loan',
+              onAction: () => _openForm(context),
+            ),
+          )
+        else
+          GroupCard(
+            children: [
+              for (final loan in list) _loanRow(context, loan),
+            ],
+          ),
+      ],
+    );
+  }
+
+  /// People view: one row per person, both directions summed.
+  Widget _peopleBody(BuildContext context, List<PersonSummary> people) {
+    if (people.isEmpty) {
+      return Container(
+        decoration: cardDecoration(),
+        child: EmptyState(
+          icon: Icons.group_outlined,
+          title: 'No people yet',
+          body:
+              'Everyone you have udhar with will appear here, with what you owe and what is owed to you.',
+          actionLabel: 'Add a loan',
+          onAction: () => _openForm(context),
+        ),
+      );
+    }
+    return GroupCard(
+      children: [
+        for (final p in people) _personRow(context, p),
+      ],
+    );
+  }
+
+  Widget _personRow(BuildContext context, PersonSummary p) {
+    return InkWell(
+      onTap: () => setState(() {
+        _personFilter = p.displayName;
+        _view = p.takenOutstanding > 0 || p.takenTotal > 0
+            ? _LoansView.taken
+            : _LoansView.given;
+      }),
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 72),
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: AppColors.accentTint,
+                borderRadius: BorderRadius.circular(AppRadius.sm),
+              ),
+              child: Center(
+                child: Text(
+                  p.displayName.isEmpty
+                      ? '?'
+                      : p.displayName[0].toUpperCase(),
+                  style: AppText.bodyStrong.copyWith(
+                      fontSize: 18, color: AppColors.brand),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(p.displayName,
+                      style: AppText.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${p.loanCount} loan${p.loanCount == 1 ? '' : 's'}',
+                    style: AppText.caption
+                        .copyWith(color: AppColors.inkTertiary),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (p.takenOutstanding > 0)
+                  Text(
+                    Store.hideAmounts
+                        ? 'You owe ••••••'
+                        : 'You owe ${fmtRs(p.takenOutstanding)}',
+                    style: AppText.bodyStrong.copyWith(
+                        fontSize: 13, color: AppColors.expense),
+                  ),
+                if (p.givenOutstanding > 0)
+                  Text(
+                    Store.hideAmounts
+                        ? 'Owed ••••••'
+                        : 'Owed ${fmtRs(p.givenOutstanding)}',
+                    style: AppText.bodyStrong.copyWith(
+                        fontSize: 13, color: AppColors.brand),
+                  ),
+                if (p.totalOutstanding == 0)
+                  Text('Settled',
+                      style: AppText.bodyStrong.copyWith(
+                          fontSize: 13, color: AppColors.brand)),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _totalCol(String label, int value, Color color) {
     return Column(
       children: [
@@ -128,11 +286,14 @@ class _LoansScreenState extends State<LoansScreen> {
   }
 
   Widget _segmented() {
-    Widget seg(String label, bool taken) {
-      final selected = _taken == taken;
+    Widget seg(String label, _LoansView view) {
+      final selected = _view == view;
       return Expanded(
         child: GestureDetector(
-          onTap: () => setState(() => _taken = taken),
+          onTap: () => setState(() {
+            _view = view;
+            _personFilter = null;
+          }),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
             height: 40,
@@ -159,7 +320,11 @@ class _LoansScreenState extends State<LoansScreen> {
         color: AppColors.surfaceInset,
         borderRadius: BorderRadius.circular(AppRadius.pill),
       ),
-      child: Row(children: [seg('Taken', true), seg('Given', false)]),
+      child: Row(children: [
+        seg('Taken', _LoansView.taken),
+        seg('Given', _LoansView.given),
+        seg('People', _LoansView.people),
+      ]),
     );
   }
 
@@ -210,6 +375,22 @@ class _LoansScreenState extends State<LoansScreen> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
+                  if (loan.dueDateMs > 0)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        'Due ${fmtDate(DateTime.fromMillisecondsSinceEpoch(loan.dueDateMs))}',
+                        style: AppText.caption.copyWith(
+                            color: Store.isOverdue(loan)
+                                ? AppColors.expense
+                                : AppColors.inkTertiary,
+                            fontWeight: Store.isOverdue(loan)
+                                ? FontWeight.w700
+                                : FontWeight.w400),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -218,6 +399,22 @@ class _LoansScreenState extends State<LoansScreen> {
               crossAxisAlignment: CrossAxisAlignment.end,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
+                if (!settled && Store.isOverdue(loan))
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 4),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: AppColors.expenseTint,
+                      borderRadius:
+                          BorderRadius.circular(AppRadius.pill),
+                    ),
+                    child: Text('OVERDUE',
+                        style: AppText.label.copyWith(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.expense)),
+                  ),
                 Text(
                   settled
                       ? 'Settled'
@@ -245,7 +442,7 @@ class _LoansScreenState extends State<LoansScreen> {
     Navigator.of(context).push(MaterialPageRoute(
       builder: (_) => LoanFormScreen(
         existing: existing,
-        presetDirection: _taken ? 'taken' : 'given',
+        presetDirection: _view == _LoansView.given ? 'given' : 'taken',
       ),
     ));
   }
@@ -349,17 +546,30 @@ class LoanDetailScreen extends StatelessWidget {
                             _field('Date',
                                 fmtDate(DateTime.fromMillisecondsSinceEpoch(
                                     loan.dateMs))),
+                            if (loan.dueDateMs > 0)
+                              _field(
+                                  'Expected date',
+                                  fmtDate(DateTime.fromMillisecondsSinceEpoch(
+                                      loan.dueDateMs))),
                             if (loan.phone.isNotEmpty)
                               _field('Phone', loan.phone),
                             if (loan.note.isNotEmpty)
                               _field('Note', loan.note),
+                            if (loan.witness.isNotEmpty)
+                              _field('Witness', loan.witness),
                           ],
                         ),
                       ),
                       const SizedBox(height: 24),
-                      Text('Payments',
+                      Text('Payment history',
                           style: AppText.label.copyWith(
                               color: AppColors.inkSecondary)),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Oldest first — remaining shown after each payment.',
+                        style: AppText.caption
+                            .copyWith(color: AppColors.inkTertiary),
+                      ),
                       const SizedBox(height: 12),
                       if (payments.isEmpty)
                         Container(
@@ -372,8 +582,9 @@ class LoanDetailScreen extends StatelessWidget {
                       else
                         GroupCard(
                           children: [
-                            for (final p in payments)
-                              _paymentRow(context, p),
+                            for (final row
+                                in Store.paymentTimeline(loan.id))
+                              _timelineRow(context, row),
                           ],
                         ),
                     ],
@@ -489,7 +700,8 @@ class LoanDetailScreen extends StatelessWidget {
     );
   }
 
-  Widget _paymentRow(BuildContext context, LoanPayment p) {
+  Widget _timelineRow(BuildContext context, PaymentTimelineRow row) {
+    final p = row.payment;
     return Container(
       constraints: const BoxConstraints(minHeight: 60),
       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -508,6 +720,14 @@ class LoanDetailScreen extends StatelessWidget {
                       .copyWith(color: AppColors.inkTertiary),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  Store.hideAmounts
+                      ? 'Remaining after: ••••••'
+                      : 'Remaining after: ${fmtRs(row.remainingAfter)}',
+                  style: AppText.caption.copyWith(
+                      color: AppColors.brand, fontWeight: FontWeight.w600),
                 ),
               ],
             ),
@@ -667,8 +887,10 @@ class _LoanFormScreenState extends State<LoanFormScreen> {
   late final TextEditingController _amountCtrl;
   late final TextEditingController _phoneCtrl;
   late final TextEditingController _noteCtrl;
+  late final TextEditingController _witnessCtrl;
   late String _direction;
   late DateTime _date;
+  DateTime? _dueDate;
 
   @override
   void initState() {
@@ -679,10 +901,14 @@ class _LoanFormScreenState extends State<LoanFormScreen> {
         text: ex != null ? groupPakistani(ex.principal) : '');
     _phoneCtrl = TextEditingController(text: ex?.phone ?? '');
     _noteCtrl = TextEditingController(text: ex?.note ?? '');
+    _witnessCtrl = TextEditingController(text: ex?.witness ?? '');
     _direction = ex?.direction ?? widget.presetDirection;
     _date = ex != null
         ? DateTime.fromMillisecondsSinceEpoch(ex.dateMs)
         : DateTime.now();
+    _dueDate = ex != null && ex.dueDateMs > 0
+        ? DateTime.fromMillisecondsSinceEpoch(ex.dueDateMs)
+        : null;
   }
 
   @override
@@ -691,6 +917,7 @@ class _LoanFormScreenState extends State<LoanFormScreen> {
     _amountCtrl.dispose();
     _phoneCtrl.dispose();
     _noteCtrl.dispose();
+    _witnessCtrl.dispose();
     super.dispose();
   }
 
@@ -711,6 +938,11 @@ class _LoanFormScreenState extends State<LoanFormScreen> {
           .millisecondsSinceEpoch,
       phone: _phoneCtrl.text.trim(),
       note: _noteCtrl.text.trim(),
+      dueDateMs: _dueDate == null
+          ? 0
+          : DateTime(_dueDate!.year, _dueDate!.month, _dueDate!.day)
+              .millisecondsSinceEpoch,
+      witness: _witnessCtrl.text.trim(),
       createdAtMs: ex?.createdAtMs ?? now.millisecondsSinceEpoch,
     );
     await Store.saveLoan(loan);
@@ -778,6 +1010,72 @@ class _LoanFormScreenState extends State<LoanFormScreen> {
                     ),
                   ),
                   const SizedBox(height: 20),
+                  Text('Expected date (optional)',
+                      style: AppText.label
+                          .copyWith(color: AppColors.inkSecondary)),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: InkWell(
+                          onTap: () async {
+                            final picked = await showDatePicker(
+                              context: context,
+                              initialDate: _dueDate ?? DateTime.now(),
+                              firstDate: DateTime(2020),
+                              lastDate: DateTime(2100),
+                            );
+                            if (picked != null) {
+                              setState(() => _dueDate = picked);
+                            }
+                          },
+                          child: Container(
+                            height: 56,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16),
+                            alignment: Alignment.centerLeft,
+                            decoration: BoxDecoration(
+                              color: AppColors.surfaceInset,
+                              borderRadius:
+                                  BorderRadius.circular(AppRadius.md),
+                            ),
+                            child: Text(
+                              _dueDate == null
+                                  ? 'When should it be repaid?'
+                                  : fmtDate(_dueDate!),
+                              style: AppText.body.copyWith(
+                                  color: _dueDate == null
+                                      ? AppColors.inkTertiary
+                                      : AppColors.ink),
+                            ),
+                          ),
+                        ),
+                      ),
+                      if (_dueDate != null) ...[
+                        const SizedBox(width: 8),
+                        InkWell(
+                          onTap: () => setState(() => _dueDate = null),
+                          borderRadius:
+                              BorderRadius.circular(AppRadius.md),
+                          child: Container(
+                            height: 56,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14),
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: AppColors.surfaceInset,
+                              borderRadius:
+                                  BorderRadius.circular(AppRadius.md),
+                            ),
+                            child: Text('Clear',
+                                style: AppText.body.copyWith(
+                                    color: AppColors.expense)),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 20),
                   Text('Phone (optional)',
                       style: AppText.label
                           .copyWith(color: AppColors.inkSecondary)),
@@ -789,6 +1087,13 @@ class _LoanFormScreenState extends State<LoanFormScreen> {
                           .copyWith(color: AppColors.inkSecondary)),
                   const SizedBox(height: 8),
                   _field(_noteCtrl, 'Add a note', TextInputType.text),
+                  const SizedBox(height: 20),
+                  Text('Witness (optional)',
+                      style: AppText.label
+                          .copyWith(color: AppColors.inkSecondary)),
+                  const SizedBox(height: 8),
+                  _field(_witnessCtrl, 'Gawah ka naam',
+                      TextInputType.name),
                   const SizedBox(height: 8),
                   Text(
                     'Loans never change your wallet balances or income / expense totals.',

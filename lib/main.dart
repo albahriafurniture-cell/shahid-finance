@@ -2,16 +2,19 @@ import 'package:flutter/material.dart';
 
 import 'data/store.dart';
 import 'services/backup_service.dart';
+import 'services/vault_service.dart';
 import 'theme.dart';
 import 'widgets/common.dart';
 import 'widgets/dock.dart';
 import 'screens/add_transaction.dart';
+import 'screens/diary.dart';
 import 'screens/home.dart';
 import 'screens/onboarding.dart';
 import 'screens/pin_lock.dart';
 import 'screens/reports.dart';
 import 'screens/settings.dart';
 import 'screens/transactions.dart';
+import 'screens/vault.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -38,6 +41,13 @@ Future<void> main() async {
   try {
     await Store.init();
     await BackupService.init();
+    // Vault init must never block boot: on failure the tab shows its
+    // locked state and VaultService.initError explains why.
+    try {
+      await VaultService.init();
+    } catch (_) {
+      // Vault tab handles the not-ready state itself.
+    }
   } catch (e) {
     bootError = e;
   }
@@ -101,8 +111,10 @@ class _GateState extends State<Gate> {
   }
 }
 
-/// Main shell: 4 tabs (Home, History, Reports, Profile) + the
-/// floating dock (which owns its FAB fan).
+/// Main shell: 6 tabs (Home, History, Vault, Diary, Reports,
+/// Profile) + the floating dock (which owns its FAB fan).
+/// v1.1.7: Vault + Diary tabs added; the dock scrolls each side
+/// group so 6 tabs fit a 360dp screen without overlap.
 /// ORDER 1 fix (v1.1.1): the tab content sits inside SafeArea(top) so no
 /// tab header ever draws under the Android status bar again — the
 /// aurora background stays full-bleed behind it.
@@ -138,6 +150,8 @@ class _MainShellState extends State<MainShell> {
                 HomeScreen(
                     onSeeAllTransactions: () => setState(() => _tab = 1)),
                 const TransactionsScreen(),
+                const VaultScreen(),
+                const DiaryScreen(),
                 const ReportsScreen(asTab: true),
                 const SettingsScreen(asTab: true),
               ],

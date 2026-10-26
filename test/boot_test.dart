@@ -8,7 +8,10 @@ import 'package:shahid_finance/data/store.dart';
 import 'package:shahid_finance/main.dart';
 import 'package:shahid_finance/screens/home.dart';
 import 'package:shahid_finance/services/auth_gate.dart';
+import 'package:shahid_finance/services/vault_service.dart';
 import 'package:shahid_finance/utils/format.dart';
+import 'package:shahid_finance/utils/password_tools.dart';
+import 'package:shahid_finance/widgets/dock.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -528,5 +531,329 @@ void main() {
     expect(find.text('Today'), findsOneWidget);
     expect(find.text('Yesterday'), findsOneWidget);
     expect(find.text('This week'), findsOneWidget);
+  });
+
+  test('v1.1.7: people view totals group by name, case-insensitive',
+      () async {
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final taken = Loan(
+      id: newId(),
+      personName: 'Ali Raza',
+      direction: 'taken',
+      principal: 100000,
+      dateMs: nowMs,
+      createdAtMs: nowMs,
+    );
+    final given = Loan(
+      id: newId(),
+      personName: '  ali raza ',
+      direction: 'given',
+      principal: 40000,
+      dateMs: nowMs,
+      createdAtMs: nowMs,
+    );
+    await Store.saveLoan(taken);
+    await Store.saveLoan(given);
+    await Store.savePayment(LoanPayment(
+        id: newId(), loanId: taken.id, amount: 25000, dateMs: nowMs,
+        createdAtMs: nowMs));
+    final summaries = Store.peopleSummaries();
+    final ali = summaries.firstWhere(
+        (s) => Store.personKey(s.displayName) == 'ali raza');
+    expect(ali.loanCount, 2);
+    expect(ali.takenTotal, 100000);
+    expect(ali.givenTotal, 40000);
+    expect(ali.takenOutstanding, 75000);
+    expect(ali.givenOutstanding, 40000);
+    expect(Store.loansForPerson('ALI RAZA').length, 2);
+    await Store.deleteLoan(taken.id);
+    await Store.deleteLoan(given.id);
+  });
+
+  test('v1.1.7: due date overdue logic + due-date sort', () async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final nowMs = now.millisecondsSinceEpoch;
+    final overdue = Loan(
+      id: newId(),
+      personName: 'Overdue Person',
+      direction: 'taken',
+      principal: 50000,
+      dateMs: nowMs,
+      dueDateMs: today.subtract(const Duration(days: 1))
+          .millisecondsSinceEpoch,
+      createdAtMs: nowMs,
+    );
+    final upcoming = Loan(
+      id: newId(),
+      personName: 'Upcoming Person',
+      direction: 'taken',
+      principal: 50000,
+      dateMs: nowMs,
+      dueDateMs:
+          today.add(const Duration(days: 5)).millisecondsSinceEpoch,
+      createdAtMs: nowMs,
+    );
+    final noDue = Loan(
+      id: newId(),
+      personName: 'No Due Person',
+      direction: 'taken',
+      principal: 50000,
+      dateMs: nowMs,
+      createdAtMs: nowMs,
+    );
+    await Store.saveLoan(overdue);
+    await Store.saveLoan(upcoming);
+    await Store.saveLoan(noDue);
+    expect(Store.isOverdue(overdue, now: now), isTrue);
+    expect(Store.isOverdue(upcoming, now: now), isFalse);
+    expect(Store.isOverdue(noDue, now: now), isFalse);
+    // Settled loans are never overdue, even with a past due date.
+    await Store.savePayment(LoanPayment(
+        id: newId(), loanId: overdue.id, amount: 50000, dateMs: nowMs,
+        createdAtMs: nowMs));
+    expect(Store.isOverdue(overdue, now: now), isFalse);
+    // Sort: due-dated nearest first (past due sorts first, so the
+    // user sees the most urgent loan at the top), then no-due loans.
+    final sorted = Store.loansSortedByDue('taken')
+        .where((l) => [
+              overdue.id,
+              upcoming.id,
+              noDue.id,
+            ].contains(l.id))
+        .toList();
+    expect(sorted.map((l) => l.id).toList(),
+        [overdue.id, upcoming.id, noDue.id]);
+    await Store.deleteLoan(overdue.id);
+    await Store.deleteLoan(upcoming.id);
+    await Store.deleteLoan(noDue.id);
+  });
+
+  test('v1.1.7: payment timeline running remaining, oldest first',
+      () async {
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final loan = Loan(
+      id: newId(),
+      personName: 'Timeline Person',
+      direction: 'given',
+      principal: 100000,
+      dateMs: nowMs,
+      createdAtMs: nowMs,
+    );
+    await Store.saveLoan(loan);
+    await Store.savePayment(LoanPayment(
+        id: newId(), loanId: loan.id, amount: 30000, dateMs: nowMs - 2000,
+        createdAtMs: nowMs));
+    await Store.savePayment(LoanPayment(
+        id: newId(), loanId: loan.id, amount: 20000, dateMs: nowMs - 1000,
+        createdAtMs: nowMs));
+    final timeline = Store.paymentTimeline(loan.id);
+    expect(timeline.length, 2);
+    expect(timeline[0].payment.amount, 30000);
+    expect(timeline[0].remainingAfter, 70000);
+    expect(timeline[1].payment.amount, 20000);
+    expect(timeline[1].remainingAfter, 50000);
+    await Store.deleteLoan(loan.id);
+  });
+
+  test('v1.1.7: witness + note optional round-trip (model + JSON)',
+      () async {
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final loan = Loan(
+      id: newId(),
+      personName: 'Witness Person',
+      direction: 'taken',
+      principal: 60000,
+      dateMs: nowMs,
+      note: 'For shop rent',
+      witness: 'Ahmed Khan',
+      dueDateMs: nowMs + 86400000,
+      createdAtMs: nowMs,
+    );
+    await Store.saveLoan(loan);
+    final readBack = Store.loans.get(loan.id)!;
+    expect(readBack.witness, 'Ahmed Khan');
+    expect(readBack.note, 'For shop rent');
+    expect(readBack.dueDateMs, nowMs + 86400000);
+    final fromJson = Loan.fromJson(loan.toJson());
+    expect(fromJson.witness, 'Ahmed Khan');
+    expect(fromJson.dueDateMs, loan.dueDateMs);
+    // Old records without the new fields read as defaults.
+    final legacy = Loan.fromJson({
+      'id': 'legacy',
+      'personName': 'Legacy',
+      'direction': 'taken',
+      'principal': 1000,
+      'dateMs': nowMs,
+      'phone': '',
+      'note': '',
+      'createdAtMs': nowMs,
+    });
+    expect(legacy.witness, '');
+    expect(legacy.dueDateMs, 0);
+    await Store.deleteLoan(loan.id);
+  });
+
+  test('v1.1.7: vault entry round-trip, search + filter', () async {
+    final box = await Hive.openBox('vault_test_box');
+    VaultService.useBoxForTest(box);
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    await VaultService.save(VaultEntry(
+      id: newId(),
+      title: 'Gmail',
+      username: 'shahid@example.com',
+      password: 'Secret123!',
+      website: 'gmail.com',
+      category: 'Login',
+      updatedAtMs: nowMs,
+    ));
+    await VaultService.save(VaultEntry(
+      id: newId(),
+      title: 'Meezan App',
+      username: '0300xxxxxxx',
+      password: 'BankPass9#',
+      category: 'Bank',
+      favourite: true,
+      updatedAtMs: nowMs,
+    ));
+    expect(VaultService.entries.length, 2);
+    expect(VaultService.search('gmail').length, 1);
+    expect(VaultService.search('meezan').first.category, 'Bank');
+    expect(
+        VaultService.filtered(category: 'Bank').length, 1);
+    expect(VaultService.filtered(favouritesOnly: true).length, 1);
+    expect(VaultService.filtered(query: 'zzz'), isEmpty);
+    // Generator + strength meter.
+    final gen = generateStrongPassword(length: 16);
+    expect(gen.length, 16);
+    expect(passwordStrength('abc'), 'Weak');
+    expect(passwordStrength('StrongPass123!@#'), 'Strong');
+    await box.clear();
+    await box.close();
+  });
+
+  test('v1.1.7: diary journal/task/goal CRUD + snapshot', () async {
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final entry = JournalEntry(
+      id: newId(),
+      title: 'First day',
+      text: 'Today I started journaling.',
+      mood: 'happy',
+      dateMs: nowMs,
+      createdAtMs: nowMs,
+      updatedAtMs: nowMs,
+    );
+    await Store.saveJournal(entry);
+    expect(Store.searchJournal('journaling').length, 1);
+    expect(Store.searchJournal('zzz'), isEmpty);
+    final task = DiaryTask(
+      id: newId(), title: 'Buy groceries', createdAtMs: nowMs);
+    await Store.saveDiaryTask(task);
+    expect(Store.allDiaryTasks.any((t) => t.id == task.id), isTrue);
+    await Store.toggleDiaryTask(task.id);
+    expect(Store.diaryTasks.get(task.id)!.done, isTrue);
+    final goal = LifeGoal(
+      id: newId(), name: 'Read books', stepsTotal: 4, createdAtMs: nowMs);
+    await Store.saveLifeGoal(goal);
+    goal.stepsDone = 1;
+    await Store.saveLifeGoal(goal);
+    expect(Store.lifeGoals.get(goal.id)!.progress, 0.25);
+    expect(Store.lifeGoals.get(goal.id)!.isDone, isFalse);
+    final snap = Store.snapshot();
+    expect(
+        (snap['journal'] as List)
+            .any((j) => (j as Map)['id'] == entry.id),
+        isTrue);
+    expect(
+        (snap['diaryTasks'] as List)
+            .any((j) => (j as Map)['id'] == task.id),
+        isTrue);
+    expect(
+        (snap['lifeGoals'] as List)
+            .any((j) => (j as Map)['id'] == goal.id),
+        isTrue);
+    // Diary never touches finance totals.
+    expect(
+        (snap as Map).containsKey('vault'), isFalse);
+    await Store.deleteJournal(entry.id);
+    await Store.deleteDiaryTask(task.id);
+    await Store.deleteLifeGoal(goal.id);
+  });
+
+  testWidgets('v1.1.7: dock shows 6 tabs at 360dp without overflow',
+      (tester) async {
+    // 360dp phone width — the v1.1.1 overlap must not return.
+    // Any RenderFlex overflow throws in a widget test, so a pass
+    // here proves the scrollable side groups fit.
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: const SizedBox.expand(),
+        bottomNavigationBar: FloatingDock(
+          currentIndex: 5,
+          onTab: (_) {},
+          onAddIncome: () {},
+          onAddExpense: () {},
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('Home'), findsOneWidget);
+    expect(find.text('History'), findsOneWidget);
+    expect(find.text('Vault'), findsOneWidget);
+    expect(find.text('Diary'), findsOneWidget);
+    expect(find.text('Reports'), findsOneWidget);
+    expect(find.text('Profile'), findsOneWidget);
+    // Profile is the last right-group tab: scroll-to-selected must
+    // have brought it into view at 360dp.
+    expect(tester.getRect(find.text('Profile')).left, lessThan(360));
+  });
+
+  test('v1.1.7: dock scroll-to-selected offset helper', () {
+    // 3 items of 64dp, viewport 132dp (360dp screen, two groups).
+    const itemWidth = 64.0;
+    const viewport = 132.0;
+    // Item 0 already visible at offset 0.
+    expect(
+        dockScrollOffsetForItem(
+          itemIndex: 0,
+          itemCount: 3,
+          itemWidth: itemWidth,
+          viewportWidth: viewport,
+          currentOffset: 0,
+        ),
+        0);
+    // Item 2 ends at 192 > 132: scroll so it is fully visible.
+    expect(
+        dockScrollOffsetForItem(
+          itemIndex: 2,
+          itemCount: 3,
+          itemWidth: itemWidth,
+          viewportWidth: viewport,
+          currentOffset: 0,
+        ),
+        60);
+    // Scrolling back: item 0 visible again from offset 60.
+    expect(
+        dockScrollOffsetForItem(
+          itemIndex: 0,
+          itemCount: 3,
+          itemWidth: itemWidth,
+          viewportWidth: viewport,
+          currentOffset: 60,
+        ),
+        0);
+    // Wide viewport: nothing to scroll.
+    expect(
+        dockScrollOffsetForItem(
+          itemIndex: 2,
+          itemCount: 3,
+          itemWidth: itemWidth,
+          viewportWidth: 400,
+          currentOffset: 0,
+        ),
+        0);
   });
 }

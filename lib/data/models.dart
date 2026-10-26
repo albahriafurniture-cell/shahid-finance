@@ -254,6 +254,8 @@ class Loan {
   int dateMs; // kab liya / kab diya
   String phone; // optional
   String note; // optional
+  int dueDateMs; // v1.1.7: optional expected repayment date, 0 = none
+  String witness; // v1.1.7: optional witness (gawah) name, free text
   int createdAtMs;
 
   Loan({
@@ -264,6 +266,8 @@ class Loan {
     required this.dateMs,
     this.phone = '',
     this.note = '',
+    this.dueDateMs = 0,
+    this.witness = '',
     required this.createdAtMs,
   });
 
@@ -278,6 +282,8 @@ class Loan {
         'dateMs': dateMs,
         'phone': phone,
         'note': note,
+        'dueDateMs': dueDateMs,
+        'witness': witness,
         'createdAtMs': createdAtMs,
       };
 
@@ -289,6 +295,8 @@ class Loan {
         dateMs: (j['dateMs'] as num).toInt(),
         phone: (j['phone'] as String?) ?? '',
         note: (j['note'] as String?) ?? '',
+        dueDateMs: (j['dueDateMs'] as num?)?.toInt() ?? 0,
+        witness: (j['witness'] as String?) ?? '',
         createdAtMs: (j['createdAtMs'] as num?)?.toInt() ?? 0,
       );
 }
@@ -299,15 +307,39 @@ class LoanAdapter extends TypeAdapter<Loan> {
 
   @override
   Loan read(BinaryReader reader) {
+    final id = reader.readString();
+    final personName = reader.readString();
+    final direction = reader.readString();
+    final principal = reader.readInt();
+    final dateMs = reader.readInt();
+    final phone = reader.readString();
+    final note = reader.readString();
+    final createdAtMs = reader.readInt();
+    // v1.1.7 fields, appended last: pre-v1.1.7 records were written
+    // without them, so missing trailing values read as defaults.
+    int dueDateMs = 0;
+    try {
+      dueDateMs = reader.readInt();
+    } catch (_) {
+      dueDateMs = 0;
+    }
+    String witness = '';
+    try {
+      witness = reader.readString();
+    } catch (_) {
+      witness = '';
+    }
     return Loan(
-      id: reader.readString(),
-      personName: reader.readString(),
-      direction: reader.readString(),
-      principal: reader.readInt(),
-      dateMs: reader.readInt(),
-      phone: reader.readString(),
-      note: reader.readString(),
-      createdAtMs: reader.readInt(),
+      id: id,
+      personName: personName,
+      direction: direction,
+      principal: principal,
+      dateMs: dateMs,
+      phone: phone,
+      note: note,
+      dueDateMs: dueDateMs,
+      witness: witness,
+      createdAtMs: createdAtMs,
     );
   }
 
@@ -321,6 +353,8 @@ class LoanAdapter extends TypeAdapter<Loan> {
     writer.writeString(obj.phone);
     writer.writeString(obj.note);
     writer.writeInt(obj.createdAtMs);
+    writer.writeInt(obj.dueDateMs);
+    writer.writeString(obj.witness);
   }
 }
 
@@ -579,5 +613,208 @@ class BudgetAdapter extends TypeAdapter<Budget> {
     writer.writeString(obj.categoryId);
     writer.writeInt(obj.limitAmount);
     writer.writeBool(obj.warnAt80);
+  }
+}
+
+/// v1.1.7: Diary — personal journal / tasks / life goals. A SEPARATE
+/// tracker like loans and savings goals: diary entries never touch
+/// wallet balances, income, or expense totals. Diary boxes ARE
+/// included in the cloud backup snapshot (small records).
+/// typeIds 7/8/9 are fresh (0–6 already taken).
+
+/// (a) Journal entry: dated, optional title, text, optional mood.
+class JournalEntry {
+  String id;
+  String title; // optional
+  String text;
+  String mood; // optional, '' = none; e.g. 'happy','calm','low','proud'
+  int dateMs; // day the entry is for
+  int createdAtMs;
+  int updatedAtMs;
+
+  JournalEntry({
+    required this.id,
+    this.title = '',
+    required this.text,
+    this.mood = '',
+    required this.dateMs,
+    required this.createdAtMs,
+    required this.updatedAtMs,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'title': title,
+        'text': text,
+        'mood': mood,
+        'dateMs': dateMs,
+        'createdAtMs': createdAtMs,
+        'updatedAtMs': updatedAtMs,
+      };
+
+  factory JournalEntry.fromJson(Map<String, dynamic> j) => JournalEntry(
+        id: j['id'] as String,
+        title: (j['title'] as String?) ?? '',
+        text: (j['text'] as String?) ?? '',
+        mood: (j['mood'] as String?) ?? '',
+        dateMs: (j['dateMs'] as num?)?.toInt() ?? 0,
+        createdAtMs: (j['createdAtMs'] as num?)?.toInt() ?? 0,
+        updatedAtMs: (j['updatedAtMs'] as num?)?.toInt() ?? 0,
+      );
+}
+
+class JournalEntryAdapter extends TypeAdapter<JournalEntry> {
+  @override
+  final int typeId = 7;
+
+  @override
+  JournalEntry read(BinaryReader reader) {
+    return JournalEntry(
+      id: reader.readString(),
+      title: reader.readString(),
+      text: reader.readString(),
+      mood: reader.readString(),
+      dateMs: reader.readInt(),
+      createdAtMs: reader.readInt(),
+      updatedAtMs: reader.readInt(),
+    );
+  }
+
+  @override
+  void write(BinaryWriter writer, JournalEntry obj) {
+    writer.writeString(obj.id);
+    writer.writeString(obj.title);
+    writer.writeString(obj.text);
+    writer.writeString(obj.mood);
+    writer.writeInt(obj.dateMs);
+    writer.writeInt(obj.createdAtMs);
+    writer.writeInt(obj.updatedAtMs);
+  }
+}
+
+/// (b) Diary task: checklist item with optional due date + done flag.
+class DiaryTask {
+  String id;
+  String title;
+  int dueDateMs; // 0 = none
+  bool done;
+  int createdAtMs;
+
+  DiaryTask({
+    required this.id,
+    required this.title,
+    this.dueDateMs = 0,
+    this.done = false,
+    required this.createdAtMs,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'title': title,
+        'dueDateMs': dueDateMs,
+        'done': done,
+        'createdAtMs': createdAtMs,
+      };
+
+  factory DiaryTask.fromJson(Map<String, dynamic> j) => DiaryTask(
+        id: j['id'] as String,
+        title: (j['title'] as String?) ?? '',
+        dueDateMs: (j['dueDateMs'] as num?)?.toInt() ?? 0,
+        done: (j['done'] as bool?) ?? false,
+        createdAtMs: (j['createdAtMs'] as num?)?.toInt() ?? 0,
+      );
+}
+
+class DiaryTaskAdapter extends TypeAdapter<DiaryTask> {
+  @override
+  final int typeId = 8;
+
+  @override
+  DiaryTask read(BinaryReader reader) {
+    return DiaryTask(
+      id: reader.readString(),
+      title: reader.readString(),
+      dueDateMs: reader.readInt(),
+      done: reader.readBool(),
+      createdAtMs: reader.readInt(),
+    );
+  }
+
+  @override
+  void write(BinaryWriter writer, DiaryTask obj) {
+    writer.writeString(obj.id);
+    writer.writeString(obj.title);
+    writer.writeInt(obj.dueDateMs);
+    writer.writeBool(obj.done);
+    writer.writeInt(obj.createdAtMs);
+  }
+}
+
+/// (c) Life goal (personal, NOT the finance SavingsGoal): name,
+/// optional target date, steps done / total steps progress.
+class LifeGoal {
+  String id;
+  String name;
+  int targetDateMs; // 0 = none
+  int stepsDone;
+  int stepsTotal; // >= 1
+  int createdAtMs;
+
+  LifeGoal({
+    required this.id,
+    required this.name,
+    this.targetDateMs = 0,
+    this.stepsDone = 0,
+    this.stepsTotal = 1,
+    required this.createdAtMs,
+  });
+
+  double get progress =>
+      stepsTotal <= 0 ? 0 : (stepsDone / stepsTotal).clamp(0.0, 1.0);
+  bool get isDone => stepsTotal > 0 && stepsDone >= stepsTotal;
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'targetDateMs': targetDateMs,
+        'stepsDone': stepsDone,
+        'stepsTotal': stepsTotal,
+        'createdAtMs': createdAtMs,
+      };
+
+  factory LifeGoal.fromJson(Map<String, dynamic> j) => LifeGoal(
+        id: j['id'] as String,
+        name: (j['name'] as String?) ?? '',
+        targetDateMs: (j['targetDateMs'] as num?)?.toInt() ?? 0,
+        stepsDone: (j['stepsDone'] as num?)?.toInt() ?? 0,
+        stepsTotal: (j['stepsTotal'] as num?)?.toInt() ?? 1,
+        createdAtMs: (j['createdAtMs'] as num?)?.toInt() ?? 0,
+      );
+}
+
+class LifeGoalAdapter extends TypeAdapter<LifeGoal> {
+  @override
+  final int typeId = 9;
+
+  @override
+  LifeGoal read(BinaryReader reader) {
+    return LifeGoal(
+      id: reader.readString(),
+      name: reader.readString(),
+      targetDateMs: reader.readInt(),
+      stepsDone: reader.readInt(),
+      stepsTotal: reader.readInt(),
+      createdAtMs: reader.readInt(),
+    );
+  }
+
+  @override
+  void write(BinaryWriter writer, LifeGoal obj) {
+    writer.writeString(obj.id);
+    writer.writeString(obj.name);
+    writer.writeInt(obj.targetDateMs);
+    writer.writeInt(obj.stepsDone);
+    writer.writeInt(obj.stepsTotal);
+    writer.writeInt(obj.createdAtMs);
   }
 }
