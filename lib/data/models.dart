@@ -389,6 +389,71 @@ class LoanPaymentAdapter extends TypeAdapter<LoanPayment> {
   }
 }
 
+/// v1.1.6: a savings goal — a SEPARATE tracker, like loans: saving
+/// towards a goal never touches wallet balances, income totals, or
+/// expense totals. savedAmount is money set aside in the tracker only.
+class SavingsGoal {
+  String id;
+  String name;
+  int targetAmount;
+  int savedAmount;
+  int createdAtMs;
+
+  SavingsGoal({
+    required this.id,
+    required this.name,
+    required this.targetAmount,
+    this.savedAmount = 0,
+    required this.createdAtMs,
+  });
+
+  int get remaining => (targetAmount - savedAmount).clamp(0, targetAmount);
+  double get progress =>
+      targetAmount <= 0 ? 0 : (savedAmount / targetAmount).clamp(0.0, 1.0);
+  bool get isComplete => remaining <= 0;
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'targetAmount': targetAmount,
+        'savedAmount': savedAmount,
+        'createdAtMs': createdAtMs,
+      };
+
+  factory SavingsGoal.fromJson(Map<String, dynamic> j) => SavingsGoal(
+        id: j['id'] as String,
+        name: j['name'] as String,
+        targetAmount: (j['targetAmount'] as num).toInt(),
+        savedAmount: (j['savedAmount'] as num?)?.toInt() ?? 0,
+        createdAtMs: (j['createdAtMs'] as num?)?.toInt() ?? 0,
+      );
+}
+
+class SavingsGoalAdapter extends TypeAdapter<SavingsGoal> {
+  @override
+  final int typeId = 6;
+
+  @override
+  SavingsGoal read(BinaryReader reader) {
+    return SavingsGoal(
+      id: reader.readString(),
+      name: reader.readString(),
+      targetAmount: reader.readInt(),
+      savedAmount: reader.readInt(),
+      createdAtMs: reader.readInt(),
+    );
+  }
+
+  @override
+  void write(BinaryWriter writer, SavingsGoal obj) {
+    writer.writeString(obj.id);
+    writer.writeString(obj.name);
+    writer.writeInt(obj.targetAmount);
+    writer.writeInt(obj.savedAmount);
+    writer.writeInt(obj.createdAtMs);
+  }
+}
+
 class AppCategory {
   String id;
   String name;

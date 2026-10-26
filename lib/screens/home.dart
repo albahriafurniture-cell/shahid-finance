@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../data/models.dart';
 import '../data/store.dart';
+import '../services/auth_gate.dart';
 import '../theme.dart';
 import '../utils/format.dart';
 import '../widgets/balance_privacy.dart';
@@ -10,28 +11,69 @@ import '../widgets/transfer_sheet.dart';
 import '../widgets/wallet_logo.dart';
 import 'add_transaction.dart';
 import 'budgets.dart';
+import 'goals.dart';
 import 'loans.dart';
 import 'transactions.dart';
 import 'wallets.dart';
 
 /// Home dashboard (master Screen 3).
-class HomeScreen extends StatelessWidget {
+///
+/// v1.1.6: layout rebuilt to match the user's reference screenshot —
+/// header (photo, greeting, name, bell) → large TOTAL BALANCE glass
+/// card (masked amount, Tap to unlock, month Income/Expense, This
+/// month pill) → big Add Income / Add Expense buttons → FOUR fixed
+/// circular quick actions (Budgets, Transfer, Goals, Loans) → My
+/// Wallets carousel → Recent Transactions with Today / Yesterday /
+/// This week segmented tabs. Real user data throughout; the
+/// screenshot's literal figures are mockup samples, never app data.
+class HomeScreen extends StatefulWidget {
   final VoidCallback onSeeAllTransactions;
   const HomeScreen({super.key, required this.onSeeAllTransactions});
+
+  /// Monday of the current week (local time).
+  static DateTime weekStart(DateTime now) {
+    final d = DateTime(now.year, now.month, now.day);
+    return d.subtract(Duration(days: d.weekday - 1));
+  }
+
+  static bool isSameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
+  /// Period filter for the Recent Transactions tabs. Pure function so
+  /// it is unit-testable without pumping the screen.
+  /// period: 0 = Today, 1 = Yesterday, 2 = This week (Mon–Sun).
+  static List<MoneyTxn> txnsForPeriod(
+      List<MoneyTxn> txns, int period, DateTime now) {
+    switch (period) {
+      case 1:
+        final y = now.subtract(const Duration(days: 1));
+        return txns.where((t) => isSameDay(t.date, y)).toList();
+      case 2:
+        final start = weekStart(now);
+        final end = start.add(const Duration(days: 7));
+        return txns
+            .where((t) =>
+                !t.date.isBefore(start) && t.date.isBefore(end))
+            .toList();
+      case 0:
+      default:
+        return txns.where((t) => isSameDay(t.date, now)).toList();
+    }
+  }
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  /// Recent Transactions tab: 0 Today, 1 Yesterday, 2 This week.
+  int _period = 0;
 
   String get _greeting {
     final h = DateTime.now().hour;
     if (h < 12) return 'Good morning';
     if (h < 17) return 'Good afternoon';
     return 'Good evening';
-  }
-
-  String? _vsCaption(int current, int previous, {required bool isExpense}) {
-    if (previous <= 0) return null;
-    final diff = ((current - previous) / previous * 100).round();
-    if (diff == 0) return 'Same as last month';
-    final sign = diff > 0 ? '+' : '−';
-    return '$sign${diff.abs()}% vs last month';
   }
 
   @override
@@ -43,12 +85,8 @@ class HomeScreen extends StatelessWidget {
         final monthTxns = Store.txnsInMonth(now.year, now.month);
         final income = Store.sumIn(monthTxns);
         final expense = Store.sumOut(monthTxns);
-        final prev = DateTime(now.year, now.month - 1);
-        final prevTxns = Store.txnsInMonth(prev.year, prev.month);
-        final prevIncome = Store.sumIn(prevTxns);
-        final prevExpense = Store.sumOut(prevTxns);
         final wallets = Store.activeWallets;
-        final recent = Store.allTxnsDesc.take(5).toList();
+        final allDesc = Store.allTxnsDesc;
 
         // Budget snapshot: the budget closest to (or past) its limit in
         // the current cycle, shown only at ≥70% used.
@@ -63,20 +101,26 @@ class HomeScreen extends StatelessWidget {
           }
         }
 
+        final periodTxns =
+            HomeScreen.txnsForPeriod(allDesc, _period, now);
+        final periodIn = Store.sumIn(periodTxns);
+        final periodOut = Store.sumOut(periodTxns);
+
         // Top clearance is status-bar height (MainShell SafeArea) + 12,
         // so the header never collides with the status bar (v1.1.1 fix).
         return ListView(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 120),
           children: [
-            // Header
+            // Header: photo, greeting + name, bell — as in the
+            // screenshot. Avatar is the user's own photo (v1.1.2);
+            // name is the stored profile name (SHAHID, v1.1.2).
             Row(
               children: [
                 ClipOval(
-                  // v1.1.2: profile DP is the user's own photo.
                   child: Image.asset(
                     'assets/images/profile_photo.jpg',
-                    width: 44,
-                    height: 44,
+                    width: 48,
+                    height: 48,
                     fit: BoxFit.cover,
                   ),
                 ),
@@ -89,81 +133,102 @@ class HomeScreen extends StatelessWidget {
                           style: AppText.caption
                               .copyWith(color: AppColors.inkSecondary)),
                       Text(Store.userName.isEmpty ? 'SHAHID' : Store.userName,
-                          style: AppText.bodyStrong.copyWith(fontSize: 16)),
+                          style: AppText.bodyStrong.copyWith(fontSize: 22)),
                     ],
                   ),
                 ),
                 const CircleIconButton(icon: Icons.notifications_outlined),
               ],
             ),
-            const SizedBox(height: 12),
-            // Hero balance card
+            const SizedBox(height: 16),
+            // Hero balance card — screenshot layout: label + eye,
+            // huge masked amount + Tap to unlock pill, divider, month
+            // Income / Expense row + This month pill.
             HeroCard(
               onTap: () => Navigator.of(context).push(MaterialPageRoute(
                   builder: (_) => const WalletsScreen())),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
-                      Text('TOTAL BALANCE',
-                          style: AppText.micro.copyWith(
-                              color: Colors.white.withValues(alpha: 0.7))),
-                      const Spacer(),
+                      Expanded(
+                        child: Text(
+                            'TOTAL BALANCE · ${wallets.length} WALLET${wallets.length == 1 ? '' : 'S'}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppText.micro.copyWith(
+                                color:
+                                    Colors.white.withValues(alpha: 0.7))),
+                      ),
+                      // Eye unlocks like the pill below (v1.1.4
+                      // balance lock: fingerprint / PIN, 30s auto-lock).
                       GestureDetector(
-                        onTap: () => Store.setSetting(
-                            'hideAmounts', !Store.hideAmounts),
-                        child: Icon(
-                          Store.hideAmounts
-                              ? Icons.visibility_off_outlined
-                              : Icons.visibility_outlined,
-                          size: 20,
-                          color: Colors.white.withValues(alpha: 0.8),
+                        onTap: () => BalanceLock.unlock(context),
+                        child: const Icon(
+                          Icons.visibility_outlined,
+                          size: 22,
+                          color: AppColors.accent,
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 6),
-                  // v1.1.4: total balance is masked by default; unlock
-                  // (fingerprint / PIN) shows it for 30 seconds only.
-                  MaskedAmount(
-                    value: Store.totalBalance,
-                    style: AppText.displayBalance
-                        .copyWith(color: Colors.white, fontSize: 44),
-                  ),
-                  const SizedBox(height: 8),
-                  const UnlockBalanceButton(),
-                  const SizedBox(height: 8),
-                  _balancePill(income, expense, prevIncome, prevExpense),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Across ${wallets.length} wallet${wallets.length == 1 ? '' : 's'}',
-                    style: AppText.caption
-                        .copyWith(color: Colors.white.withValues(alpha: 0.7)),
+                  const SizedBox(height: 10),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Expanded(
+                        // v1.1.4: total balance masked by default;
+                        // unlock shows it for 30 seconds only.
+                        // FittedBox: a long real balance must shrink,
+                        // never push the unlock pill off-screen.
+                        child: FittedBox(
+                          alignment: Alignment.centerLeft,
+                          fit: BoxFit.scaleDown,
+                          child: MaskedAmount(
+                            value: Store.totalBalance,
+                            style: AppText.displayBalance
+                                .copyWith(color: Colors.white),
+                          ),
+                        ),
+                      ),
+                      const UnlockBalanceButton(),
+                    ],
                   ),
                   const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 16),
+                    padding: EdgeInsets.symmetric(vertical: 14),
                     child: Divider(height: 1, color: Color(0x26FFFFFF)),
                   ),
                   Row(
                     children: [
                       Expanded(
-                        child: _heroStat(
+                        child: _monthStat(
                           icon: Icons.south_west,
+                          iconColor: AppColors.accent,
+                          tileColor: AppColors.accentTint,
                           label: 'Income',
                           value: income,
-                          caption:
-                              _vsCaption(income, prevIncome, isExpense: false),
                         ),
                       ),
                       Expanded(
-                        child: _heroStat(
+                        child: _monthStat(
                           icon: Icons.north_east,
+                          iconColor: AppColors.expense,
+                          tileColor: AppColors.expenseTint,
                           label: 'Expense',
                           value: expense,
-                          caption: _vsCaption(expense, prevExpense,
-                              isExpense: true),
                         ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: AppColors.surface,
+                          borderRadius:
+                              BorderRadius.circular(AppRadius.pill),
+                        ),
+                        child: Text('This month',
+                            style: AppText.label.copyWith(fontSize: 12)),
                       ),
                     ],
                   ),
@@ -186,16 +251,21 @@ class HomeScreen extends StatelessWidget {
                             BorderRadius.circular(AppRadius.md),
                         boxShadow: AppShadows.raised,
                       ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(Icons.south_west,
-                              size: 22, color: AppColors.canvas),
-                          const SizedBox(width: 8),
-                          Text('Add Income',
-                              style: AppText.bodyStrong.copyWith(
-                                  fontSize: 16, color: AppColors.canvas)),
-                        ],
+                      // FittedBox: on narrow phones the label must
+                      // shrink, never overflow the button.
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.south_west,
+                                size: 22, color: AppColors.canvas),
+                            const SizedBox(width: 8),
+                            Text('Add Income',
+                                style: AppText.bodyStrong.copyWith(
+                                    fontSize: 16, color: AppColors.canvas)),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -214,25 +284,63 @@ class HomeScreen extends StatelessWidget {
                             color: AppColors.accent, width: 1.5),
                         boxShadow: AppShadows.card,
                       ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(Icons.north_east,
-                              size: 22, color: AppColors.expense),
-                          const SizedBox(width: 8),
-                          Text('Add Expense',
-                              style: AppText.bodyStrong.copyWith(
-                                  fontSize: 16, color: AppColors.ink)),
-                        ],
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.north_east,
+                                size: 22, color: AppColors.expense),
+                            const SizedBox(width: 8),
+                            Text('Add Expense',
+                                style: AppText.bodyStrong.copyWith(
+                                    fontSize: 16, color: AppColors.ink)),
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 20),
-            // v1.1.3 multi-scroll: wallet cards are a horizontally
-            // swipeable carousel (snap via PageView, next card peeks).
+            const SizedBox(height: 24),
+            // v1.1.6: FOUR fixed circular quick actions, all visible
+            // at once (no scrolling) — exactly as in the screenshot.
+            // Add Income/Expense live in the big buttons above;
+            // Wallets live in the carousel below.
+            Row(
+              children: [
+                _quickFixed(
+                  context,
+                  icon: Icons.track_changes,
+                  label: 'Budgets',
+                  onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const BudgetsScreen())),
+                ),
+                _quickFixed(
+                  context,
+                  icon: Icons.swap_horiz,
+                  label: 'Transfer',
+                  onTap: () => showTransferSheet(context),
+                ),
+                _quickFixed(
+                  context,
+                  icon: Icons.flag_outlined,
+                  label: 'Goals',
+                  onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const GoalsScreen())),
+                ),
+                _quickFixed(
+                  context,
+                  icon: Icons.handshake_outlined,
+                  label: 'Loans',
+                  onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const LoansScreen())),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            // My Wallets carousel (v1.1.3: snap + peek + Swipe hint).
             SectionHeader(
               title: 'My Wallets',
               actionLabel: 'Swipe ›',
@@ -241,182 +349,141 @@ class HomeScreen extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             _WalletCarousel(wallets: wallets),
-            const SizedBox(height: 20),
-            // v1.1.3 multi-scroll: quick actions scroll horizontally
-            // (row is wider than the screen, so the next action peeks).
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              physics: const BouncingScrollPhysics(),
-              child: Row(
-                children: [
-                  _quickAction(
-                    context,
-                    icon: Icons.north_east,
-                    label: 'Add Expense',
-                    onTap: () => _openAdd(context, income: false),
-                  ),
-                  _quickAction(
-                    context,
-                    icon: Icons.south_west,
-                    label: 'Add Income',
-                    onTap: () => _openAdd(context, income: true),
-                  ),
-                  _quickAction(
-                    context,
-                    icon: Icons.track_changes,
-                    label: 'Budgets',
-                    onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                        builder: (_) => const BudgetsScreen())),
-                  ),
-                  _quickAction(
-                    context,
-                    icon: Icons.swap_horiz,
-                    label: 'Transfer',
-                    onTap: () => showTransferSheet(context),
-                  ),
-                  _quickAction(
-                    context,
-                    icon: Icons.account_balance_wallet_outlined,
-                    label: 'Wallets',
-                    onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                        builder: (_) => const WalletsScreen())),
-                  ),
-                  // v1.1.5: Loans tracker (taken + given), reachable
-                  // from Home — the 4-tab dock is unchanged.
-                  _quickAction(
-                    context,
-                    icon: Icons.handshake_outlined,
-                    label: 'Loans',
-                    onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                        builder: (_) => const LoansScreen())),
-                  ),
-                ],
-              ),
-            ),
-            // Budget snapshot strip
-            if (alert != null) ...[
-              const SizedBox(height: 20),
-              _budgetStrip(context, alert, cycle),
-            ],
             const SizedBox(height: 28),
+            // Recent Transactions with segmented period tabs
+            // (v1.1.6: replaces the v1.1.4 stacked day sections).
             SectionHeader(
               title: 'Recent Transactions',
-              actionLabel: recent.isEmpty ? null : 'See all',
-              onAction: onSeeAllTransactions,
+              actionLabel: 'See all',
+              onAction: widget.onSeeAllTransactions,
             ),
             const SizedBox(height: 12),
-            if (recent.isEmpty)
-              Container(
-                decoration: cardDecoration(),
-                child: EmptyState(
-                  icon: Icons.receipt_long_outlined,
-                  title: 'No transactions yet',
-                  body:
-                      'Add your first income or expense and it will appear here.',
-                  actionLabel: 'Add your first one',
-                  onAction: () => _openAdd(context, income: false),
+            _periodTabs(),
+            const SizedBox(height: 12),
+            if (periodTxns.isEmpty)
+              _emptyPeriod(periodIn, periodOut)
+            else ...[
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  Store.hideAmounts
+                      ? 'In Rs •••••• · Out Rs ••••••'
+                      : 'In ${fmtRs(periodIn)} · Out ${fmtRs(periodOut)}',
+                  style:
+                      AppText.caption.copyWith(color: AppColors.inkSecondary),
                 ),
-              )
-            else
+              ),
               GroupCard(
                 children: [
-                  for (final t in recent)
+                  for (final t in periodTxns)
                     TxnRow(
                       txn: t,
                       onTap: () => showTxnDetailSheet(context, t),
                     ),
                 ],
               ),
-            // v1.1.4: daily details on the front screen — Today,
-            // Yesterday, and the current week, each with its income /
-            // expense totals and entries (first 8; See all → History).
-            const SizedBox(height: 28),
-            _daySection(context, 'Today',
-                Store.allTxnsDesc.where((t) => _isSameDay(t.date, now))),
-            const SizedBox(height: 28),
-            _daySection(
-                context,
-                'Yesterday',
-                Store.allTxnsDesc.where(
-                    (t) => _isSameDay(t.date, now.subtract(const Duration(days: 1))))),
-            const SizedBox(height: 28),
-            _daySection(
-                context,
-                'This week',
-                Store.allTxnsDesc.where((t) =>
-                    !t.date.isBefore(_weekStart(now)) &&
-                    t.date.isBefore(
-                        _weekStart(now).add(const Duration(days: 7))))),
+            ],
+            // Budget alert strip — kept, but moved below Recent
+            // Transactions so the screenshot's order stays intact.
+            if (alert != null) ...[
+              const SizedBox(height: 20),
+              _budgetStrip(context, alert, cycle),
+            ],
           ],
         );
       },
     );
   }
 
-  static bool _isSameDay(DateTime a, DateTime b) =>
-      a.year == b.year && a.month == b.month && a.day == b.day;
-
-  /// Monday of the current week (local time).
-  static DateTime _weekStart(DateTime now) {
-    final d = DateTime(now.year, now.month, now.day);
-    return d.subtract(Duration(days: d.weekday - 1));
-  }
-
-  /// v1.1.4 daily section: period totals + entries (first 8).
-  Widget _daySection(
-      BuildContext context, String title, Iterable<MoneyTxn> txns) {
-    final list = txns.toList();
-    final income = Store.sumIn(list);
-    final expense = Store.sumOut(list);
-    final shown = list.take(8).toList();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(child: Text(title, style: AppText.h2)),
-            Text(
-              Store.hideAmounts
-                  ? 'In Rs •••••• · Out Rs ••••••'
-                  : 'In ${fmtRs(income)} · Out ${fmtRs(expense)}',
-              style:
-                  AppText.caption.copyWith(color: AppColors.inkSecondary),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        if (list.isEmpty)
-          Container(
-            decoration: cardDecoration(),
-            padding: const EdgeInsets.all(16),
-            child: Text('No entries',
-                style:
-                    AppText.label.copyWith(color: AppColors.inkSecondary)),
-          )
-        else
-          GroupCard(
-            children: [
-              for (final t in shown)
-                TxnRow(
-                  txn: t,
-                  onTap: () => showTxnDetailSheet(context, t),
-                ),
-              if (list.length > shown.length)
-                GestureDetector(
-                  onTap: onSeeAllTransactions,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    child: Center(
-                      child: Text(
-                          'See all ${list.length} entries ›',
-                          style: AppText.label
-                              .copyWith(color: AppColors.accent)),
+  /// Segmented Today / Yesterday / This week control, as in the
+  /// screenshot: one dark pill container, selected tab tinted neon.
+  Widget _periodTabs() {
+    const labels = ['Today', 'Yesterday', 'This week'];
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+      ),
+      padding: const EdgeInsets.all(4),
+      child: Row(
+        children: [
+          for (var i = 0; i < labels.length; i++)
+            Expanded(
+              child: GestureDetector(
+                onTap: () => setState(() => _period = i),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  height: 40,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: _period == i
+                        ? AppColors.accentTint
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                  ),
+                  child: Text(
+                    labels[i],
+                    style: AppText.label.copyWith(
+                      fontSize: 13,
+                      color: _period == i
+                          ? AppColors.accent
+                          : AppColors.inkSecondary,
                     ),
                   ),
                 ),
-            ],
-          ),
-      ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// Dashed-border empty state, exactly as in the screenshot:
+  /// receipt icon tile, "No transactions yet", In/Out totals,
+  /// "Add first" action.
+  Widget _emptyPeriod(int periodIn, int periodOut) {
+    return CustomPaint(
+      painter: _DashedBorderPainter(),
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        child: Row(
+          children: [
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: AppColors.accentTint,
+                borderRadius: BorderRadius.circular(AppRadius.sm),
+              ),
+              child: const Icon(Icons.receipt_long_outlined,
+                  size: 26, color: AppColors.accent),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('No transactions yet',
+                      style: AppText.bodyStrong.copyWith(fontSize: 16)),
+                  const SizedBox(height: 2),
+                  Text(
+                    Store.hideAmounts
+                        ? 'In Rs •••••• · Out Rs ••••••'
+                        : 'In ${fmtRs(periodIn)} · Out ${fmtRs(periodOut)}',
+                    style: AppText.caption
+                        .copyWith(color: AppColors.inkSecondary),
+                  ),
+                ],
+              ),
+            ),
+            GestureDetector(
+              onTap: () => _openAdd(context, income: false),
+              child: Text('Add first',
+                  style: AppText.label.copyWith(color: AppColors.accent)),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -426,33 +493,12 @@ class HomeScreen extends StatelessWidget {
     ));
   }
 
-  Widget _balancePill(int income, int expense, int prevIncome, int prevExpense) {
-    final net = income - expense;
-    final prevNet = prevIncome - prevExpense;
-    String label;
-    if (prevNet == 0) {
-      label = net >= 0 ? 'Saving this month' : 'Spending this month';
-    } else {
-      final pct = ((net - prevNet) / prevNet.abs() * 100).round();
-      label = '${pct >= 0 ? '+' : '−'}${pct.abs()}% vs last month';
-    }
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: AppColors.accent,
-        borderRadius: BorderRadius.circular(AppRadius.pill),
-      ),
-      child: Text(label,
-          style: AppText.label
-              .copyWith(fontSize: 12, color: AppColors.canvas)),
-    );
-  }
-
-  Widget _heroStat({
+  Widget _monthStat({
     required IconData icon,
+    required Color iconColor,
+    required Color tileColor,
     required String label,
     required int value,
-    String? caption,
   }) {
     return Row(
       children: [
@@ -460,10 +506,10 @@ class HomeScreen extends StatelessWidget {
           width: 32,
           height: 32,
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.15),
+            color: tileColor,
             borderRadius: BorderRadius.circular(AppRadius.xs),
           ),
-          child: Icon(icon, size: 18, color: Colors.white),
+          child: Icon(icon, size: 18, color: iconColor),
         ),
         const SizedBox(width: 10),
         Expanded(
@@ -479,10 +525,6 @@ class HomeScreen extends StatelessWidget {
                     color: Colors.white, fontSize: 15),
                 neutral: true,
               ),
-              if (caption != null)
-                Text(caption,
-                    style: AppText.caption.copyWith(
-                        fontSize: 11, color: AppColors.accent)),
             ],
           ),
         ),
@@ -490,32 +532,31 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  Widget _quickAction(
+  Widget _quickFixed(
     BuildContext context, {
     required IconData icon,
     required String label,
     required VoidCallback onTap,
   }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10),
+    return Expanded(
       child: GestureDetector(
         onTap: onTap,
         child: Column(
-        children: [
-          Container(
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              shape: BoxShape.circle,
-              border: Border.all(color: AppColors.hairline),
-              boxShadow: AppShadows.card,
+          children: [
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                shape: BoxShape.circle,
+                border: Border.all(color: AppColors.hairline),
+                boxShadow: AppShadows.card,
+              ),
+              child: Icon(icon, size: 24, color: AppColors.accent),
             ),
-            child: Icon(icon, size: 22, color: AppColors.accent),
-          ),
-          const SizedBox(height: 6),
-          Text(label, style: AppText.label.copyWith(fontSize: 11)),
-        ],
+            const SizedBox(height: 6),
+            Text(label, style: AppText.label.copyWith(fontSize: 12)),
+          ],
         ),
       ),
     );
@@ -583,6 +624,34 @@ class HomeScreen extends StatelessWidget {
   }
 }
 
+/// Dashed rounded-rectangle border for the empty-period state.
+class _DashedBorderPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(24));
+    final path = Path()..addRRect(rrect);
+    const dashWidth = 6.0;
+    const dashSpace = 5.0;
+    final paint = Paint()
+      ..color = const Color(0x66FFFFFF)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+    for (final metric in path.computeMetrics()) {
+      var distance = 0.0;
+      while (distance < metric.length) {
+        final segment =
+            metric.extractPath(distance, distance + dashWidth);
+        canvas.drawPath(segment, paint);
+        distance += dashWidth + dashSpace;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
 /// v1.1.3: horizontally swipeable wallet carousel. PageView snaps
 /// page-to-page; viewportFraction < 1 leaves the next card peeking
 /// in, which is the affordance that more cards exist sideways.
@@ -618,7 +687,9 @@ class _WalletCarouselState extends State<_WalletCarousel> {
     return Column(
       children: [
         SizedBox(
-          height: 132,
+          // v1.1.6: 140, not 132 — the restructured card (logo row +
+          // caption + Balance row) overflowed by 2px at 132 in tests.
+          height: 140,
           child: PageView.builder(
             controller: _controller,
             onPageChanged: (i) => setState(() => _page = i),
@@ -647,29 +718,48 @@ class _WalletCarouselState extends State<_WalletCarousel> {
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis),
                             ),
-                            if (w.isDefault)
-                              Text('Default',
-                                  style: AppText.caption.copyWith(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w700,
-                                      color: AppColors.brandDeep)),
                           ],
                         ),
-                        const Spacer(),
-                        Text('BALANCE',
-                            style: AppText.micro.copyWith(
-                                color: AppColors.inkTertiary)),
-                        const SizedBox(height: 2),
-                        MaskedAmount(
-                          value: balance,
-                          style: AppText.amountRow,
-                        ),
-                        const SizedBox(height: 2),
+                        const SizedBox(height: 6),
                         Text(w.caption,
                             style: AppText.caption.copyWith(
                                 color: AppColors.inkTertiary),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis),
+                        const Spacer(),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Balance',
+                                      style: AppText.caption.copyWith(
+                                          color: AppColors.inkTertiary)),
+                                  const SizedBox(height: 2),
+                                  MaskedAmount(
+                                    value: balance,
+                                    style: AppText.amountRow,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (w.isDefault)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: AppColors.accent,
+                                  borderRadius: BorderRadius.circular(
+                                      AppRadius.pill),
+                                ),
+                                child: Text('Default',
+                                    style: AppText.label.copyWith(
+                                        fontSize: 11,
+                                        color: AppColors.canvas)),
+                              ),
+                          ],
+                        ),
                       ],
                     ),
                   ),

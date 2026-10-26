@@ -206,6 +206,12 @@ void main() {
 
   testWidgets('v1.1.4: Home shows Today / Yesterday / This week',
       (tester) async {
+    // Tall viewport so the Recent tabs (below the fold in the
+    // default viewport) are built — same approach as the v1.1.6
+    // Home layout test.
+    tester.view.physicalSize = const Size(390, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
     final w = Store.defaultWallet!;
     final now = DateTime.now();
     final nowMs = now.millisecondsSinceEpoch;
@@ -219,7 +225,12 @@ void main() {
       dateMs: nowMs,
       createdAtMs: nowMs,
     );
-    await Store.saveTxn(todayTxn);
+    // v1.1.6: Hive writes inside a testWidgets body stall in this
+    // sandbox (FakeAsync zone vs Hive isolate — proven: the identical
+    // save passes instantly in a plain test). runAsync executes the
+    // real async work outside the fake zone; behaviour verified is
+    // unchanged.
+    await tester.runAsync(() => Store.saveTxn(todayTxn));
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
         body: HomeScreen(onSeeAllTransactions: () {}),
@@ -230,7 +241,7 @@ void main() {
     expect(find.text('Yesterday'), findsOneWidget);
     expect(find.text('This week'), findsOneWidget);
     expect(find.text('Today note'), findsWidgets);
-    await Store.deleteTxn(todayTxn.id);
+    await tester.runAsync(() => Store.deleteTxn(todayTxn.id));
   });
 
   test('v1.1.5: income order is SDS, Freelance, Business, Salary, Others',
@@ -411,5 +422,111 @@ void main() {
         .cast<Map<String, dynamic>>();
     expect(snapPayments.any((j) => j['loanId'] == loan.id), isTrue);
     await Store.deleteLoan(loan.id);
+  });
+
+  test('v1.1.6: Recent tab period filtering Today/Yesterday/This week',
+      () {
+    // Wednesday 2026-10-28: Monday of the week is 2026-10-26.
+    final now = DateTime(2026, 10, 28, 12);
+    final w = Store.defaultWallet!;
+    MoneyTxn txn(String note, DateTime d, String type) => MoneyTxn(
+          id: newId(),
+          type: type,
+          amount: 1000,
+          walletId: w.id,
+          categoryId: type == 'income' ? 'sds' : 'food',
+          note: note,
+          dateMs: d.millisecondsSinceEpoch,
+          createdAtMs: d.millisecondsSinceEpoch,
+        );
+    final all = [
+      txn('today', DateTime(2026, 10, 28, 9), 'expense'),
+      txn('yesterday', DateTime(2026, 10, 27, 9), 'income'),
+      txn('monday', DateTime(2026, 10, 26, 9), 'expense'),
+      txn('last-sunday', DateTime(2026, 10, 25, 9), 'expense'),
+      txn('last-month', DateTime(2026, 9, 30, 9), 'income'),
+    ];
+    final today = HomeScreen.txnsForPeriod(all, 0, now);
+    expect(today.map((t) => t.note), ['today']);
+    final yesterday = HomeScreen.txnsForPeriod(all, 1, now);
+    expect(yesterday.map((t) => t.note), ['yesterday']);
+    final week = HomeScreen.txnsForPeriod(all, 2, now);
+    expect(week.map((t) => t.note).toSet(),
+        {'today', 'yesterday', 'monday'});
+    // Monday boundary: week starts Monday, not Sunday.
+    expect(HomeScreen.weekStart(now), DateTime(2026, 10, 26));
+  });
+
+  test('v1.1.6: goals remaining/progress math + snapshot + isolation',
+      () async {
+    final beforeBalance = Store.totalBalance;
+    final beforeIn = Store.sumIn(Store.allTxnsDesc);
+    final beforeOut = Store.sumOut(Store.allTxnsDesc);
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final goal = SavingsGoal(
+      id: newId(),
+      name: 'Test Goal',
+      targetAmount: 10000,
+      createdAtMs: nowMs,
+    );
+    await Store.saveGoal(goal);
+    expect(goal.remaining, 10000);
+    expect(goal.progress, 0);
+    await Store.addToGoal(goal.id, 4000);
+    final after = Store.goals.get(goal.id)!;
+    expect(after.savedAmount, 4000);
+    expect(after.remaining, 6000);
+    expect(after.progress, 0.4);
+    expect(after.isComplete, isFalse);
+    // Adding past the target caps at the target (progress never > 1).
+    await Store.addToGoal(goal.id, 8000);
+    final capped = Store.goals.get(goal.id)!;
+    expect(capped.savedAmount, 10000);
+    expect(capped.remaining, 0);
+    expect(capped.progress, 1.0);
+    expect(capped.isComplete, isTrue);
+    // Goals ride in the cloud snapshot, like loans.
+    final snapGoals = (Store.snapshot()['goals'] as List)
+        .cast<Map<String, dynamic>>();
+    expect(snapGoals.any((j) => j['id'] == goal.id), isTrue);
+    // And never touch wallet / income / expense totals.
+    expect(Store.totalBalance, beforeBalance);
+    expect(Store.sumIn(Store.allTxnsDesc), beforeIn);
+    expect(Store.sumOut(Store.allTxnsDesc), beforeOut);
+    await Store.deleteGoal(goal.id);
+    expect(Store.goals.get(goal.id), isNull);
+  });
+
+  testWidgets('v1.1.6: Home matches screenshot layout',
+      (tester) async {
+    // Tall viewport so the whole ListView (including Recent
+    // Transactions below the fold) is built without scrolling —
+    // scrollUntilVisible is ambiguous here because the wallet
+    // carousel PageView is a second Scrollable.
+    tester.view.physicalSize = const Size(390, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: HomeScreen(onSeeAllTransactions: () {}),
+      ),
+    ));
+    await tester.pump(const Duration(milliseconds: 400));
+    // Header + hero + fixed quick actions + recent tabs.
+    expect(find.textContaining('TOTAL BALANCE'), findsOneWidget);
+    expect(find.text('This month'), findsOneWidget);
+    expect(find.text('Add Income'), findsWidgets);
+    expect(find.text('Add Expense'), findsWidgets);
+    expect(find.text('Budgets'), findsOneWidget);
+    expect(find.text('Transfer'), findsOneWidget);
+    expect(find.text('Goals'), findsOneWidget);
+    expect(find.text('Loans'), findsOneWidget);
+    expect(find.text('My Wallets'), findsOneWidget);
+    expect(find.text('Swipe ›'), findsOneWidget);
+    expect(find.text('Recent Transactions'), findsOneWidget);
+    expect(find.text('See all'), findsOneWidget);
+    expect(find.text('Today'), findsOneWidget);
+    expect(find.text('Yesterday'), findsOneWidget);
+    expect(find.text('This week'), findsOneWidget);
   });
 }

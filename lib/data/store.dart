@@ -19,6 +19,7 @@ class Store {
   static const settingsBox = 'settings';
   static const loansBox = 'loans';
   static const loanPaymentsBox = 'loan_payments';
+  static const goalsBox = 'goals';
 
   static late Box<Wallet> wallets;
   static late Box<MoneyTxn> txns;
@@ -27,6 +28,7 @@ class Store {
   static late Box settings;
   static late Box<Loan> loans;
   static late Box<LoanPayment> loanPayments;
+  static late Box<SavingsGoal> goals;
 
   /// Bumped on every mutation; screens listen and rebuild.
   static final ValueNotifier<int> changes = ValueNotifier<int>(0);
@@ -45,6 +47,9 @@ class Store {
     if (!Hive.isAdapterRegistered(4)) Hive.registerAdapter(LoanAdapter());
     if (!Hive.isAdapterRegistered(5)) {
       Hive.registerAdapter(LoanPaymentAdapter());
+    }
+    if (!Hive.isAdapterRegistered(6)) {
+      Hive.registerAdapter(SavingsGoalAdapter());
     }
     _adaptersRegistered = true;
   }
@@ -77,6 +82,7 @@ class Store {
     settings = await Hive.openBox(settingsBox);
     loans = await Hive.openBox<Loan>(loansBox);
     loanPayments = await Hive.openBox<LoanPayment>(loanPaymentsBox);
+    goals = await Hive.openBox<SavingsGoal>(goalsBox);
   }
 
   // ---------------------------------------------------------------- settings
@@ -499,6 +505,37 @@ class Store {
     bump();
   }
 
+  // ------------------------------------------------------------------- goals
+  /// v1.1.6: savings goals are a SEPARATE tracker like loans — adding
+  /// or saving towards a goal never touches wallets, income, or
+  /// expense totals. Saved amounts live only in the goals box.
+  static List<SavingsGoal> get allGoals {
+    final list = goals.values.toList();
+    list.sort((a, b) => b.createdAtMs.compareTo(a.createdAtMs));
+    return list;
+  }
+
+  static Future<void> saveGoal(SavingsGoal goal) async {
+    await goals.put(goal.id, goal);
+    bump();
+  }
+
+  static Future<void> deleteGoal(String id) async {
+    await goals.delete(id);
+    bump();
+  }
+
+  /// Add saved money to a goal, capped at the target so progress
+  /// never exceeds 100%.
+  static Future<void> addToGoal(String id, int amount) async {
+    final goal = goals.get(id);
+    if (goal == null || amount <= 0) return;
+    goal.savedAmount =
+        (goal.savedAmount + amount).clamp(0, goal.targetAmount);
+    await goals.put(goal.id, goal);
+    bump();
+  }
+
   /// Unique category count (Other is shared between kinds) — "12 categories".
   static int get uniqueCategoryCount =>
       categories.values.where((c) => !c.archived).map((c) => c.name).toSet().length;
@@ -515,6 +552,7 @@ class Store {
       'categories': categories.values.map((c) => c.toJson()).toList(),
       'loans': loans.values.map((l) => l.toJson()).toList(),
       'loanPayments': loanPayments.values.map((p) => p.toJson()).toList(),
+      'goals': goals.values.map((g) => g.toJson()).toList(),
       'settings': {
         for (final k in settings.keys) k as String: settings.get(k),
       },
@@ -528,6 +566,7 @@ class Store {
     await categories.clear();
     await loans.clear();
     await loanPayments.clear();
+    await goals.clear();
     for (final j in (snap['wallets'] as List? ?? [])) {
       final w = Wallet.fromJson(Map<String, dynamic>.from(j as Map));
       await wallets.put(w.id, w);
@@ -551,6 +590,10 @@ class Store {
     for (final j in (snap['loanPayments'] as List? ?? [])) {
       final p = LoanPayment.fromJson(Map<String, dynamic>.from(j as Map));
       await loanPayments.put(p.id, p);
+    }
+    for (final j in (snap['goals'] as List? ?? [])) {
+      final g = SavingsGoal.fromJson(Map<String, dynamic>.from(j as Map));
+      await goals.put(g.id, g);
     }
     final savedSettings = snap['settings'];
     if (savedSettings is Map) {
